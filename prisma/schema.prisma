@@ -1,0 +1,180 @@
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// --- ENUMS ---
+enum ProductCategory {
+  DIGITAL
+  PHYSICAL
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  DELIVERED
+  FAILED
+  CANCELED
+}
+
+enum InvitationStatus {
+  DRAFT
+  ACTIVE
+  EXPIRED
+}
+
+enum AddressType {
+  PRIMARY
+  SECONDARY
+}
+
+// Models
+model ProductType {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+}
+
+model Product {
+  id               String          @id @default(cuid())
+  name             String
+  description      String
+  price            Float
+  images           String[]
+  previewUrl       String?
+  isActive         Boolean         @default(true)
+  category         ProductCategory @default(DIGITAL)
+  weightGram       Int?
+  lengthCm         Int?
+  widthCm          Int?
+  heightCm         Int?
+  themeIdentifier  String?
+  isDesignable     Boolean         @default(false)
+  designConfig     Json?
+  formSchema       Json            @default("[]") // Pastikan baris ini ada
+
+  productTypeId    String
+  productType      ProductType     @relation(fields: [productTypeId], references: [id])
+
+  designTemplateId String?
+  designTemplate   DesignTemplate? @relation(fields: [designTemplateId], references: [id], onDelete: SetNull)
+
+  cartItems      CartItem[]
+  orderItems     OrderItem[]
+  userDesigns    UserDesign[]
+}
+
+model DesignTemplate {
+  id         String    @id @default(cuid())
+  name       String    @unique
+  designData Json
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  products   Product[]
+}
+
+model UserDesign {
+  id         String     @id @default(cuid())
+  name       String
+  userId     String
+  productId  String
+  product    Product    @relation(fields: [productId], references: [id])
+  designData Json
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+}
+
+model Cart {
+  id        String     @id @default(cuid())
+  userId    String     @unique
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  items     CartItem[]
+}
+
+model CartItem {
+  id           String      @id @default(cuid())
+  cartId       String
+  cart         Cart        @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product     @relation(fields: [productId], references: [id])
+  quantity     Int
+  subdomain    String?
+  createdAt    DateTime    @default(now())
+  userDesignId String?
+  userDesign   UserDesign? @relation(fields: [userDesignId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, productId, subdomain, userDesignId])
+}
+
+model Order {
+  id               String      @id @default(cuid())
+  userId           String
+  status           OrderStatus @default(PENDING)
+  totalAmount      Float
+  customerName     String?
+  shippingAddress  String?
+  shippingProvider String?
+  shippingCost     Float?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  items            OrderItem[]
+}
+
+model OrderItem {
+  id           String      @id @default(cuid())
+  orderId      String
+  order        Order       @relation(fields: [orderId], references: [id])
+  productId    String
+  product      Product     @relation(fields: [productId], references: [id])
+  quantity     Int
+  price        Float
+  productName  String
+  subdomain    String?
+  userDesignId String?
+  userDesign   UserDesign? @relation(fields: [userDesignId], references: [id], onDelete: Restrict)
+
+  invitation   UserInvitation?
+
+  @@unique([orderId, productId, subdomain, userDesignId])
+}
+
+model UserInvitation {
+  id          String           @id @default(cuid())
+  userId      String
+  orderItemId String           @unique
+  orderItem   OrderItem        @relation(fields: [orderItemId], references: [id])
+  subdomain   String           @unique
+  status      InvitationStatus @default(DRAFT)
+  formData    Json             @default("{}")
+  createdAt   DateTime         @default(now())
+  publishedAt DateTime?
+  expiresAt   DateTime?
+}
+
+model Address {
+  id          String      @id @default(cuid())
+  userId      String
+  type        AddressType
+  street      String
+  city        String
+  province    String
+  postalCode  String
+  country     String
+  phoneNumber String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@unique([userId, type])
+}
