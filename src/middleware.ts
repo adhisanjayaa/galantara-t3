@@ -1,5 +1,4 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
-import { type NextRequest } from "next/server";
 
 // Definisikan rute mana saja yang HARUS dilindungi (memerlukan login)
 const isProtectedRoute = createRouteMatcher([
@@ -12,8 +11,8 @@ const isProtectedRoute = createRouteMatcher([
   "/manage-invitation(.*)",
 ]);
 
-export default clerkMiddleware((auth, req: NextRequest) => {
-  // [FIX] Jika rute saat ini adalah rute yang dilindungi, panggil auth.protect()
+export default clerkMiddleware((auth, req) => {
+  // Jika rute saat ini adalah rute yang dilindungi, panggil auth.protect()
   if (isProtectedRoute(req)) {
     auth.protect();
   }
@@ -21,9 +20,8 @@ export default clerkMiddleware((auth, req: NextRequest) => {
 
 export const config = {
   matcher: [
-    // Jalankan middleware pada semua rute kecuali untuk file statis internal Next.js
-    "/((?!.+\\.[\\w]+$|_next).*)",
-    "/",
-    "/(api|trpc)(.*)",
+    // Jalankan middleware pada semua rute kecuali untuk yang spesifik di bawah ini
+    "/((?!_next/image|_next/static|favicon.ico|robots.txt).*)",
+    // Catatan: '/api/(.*)' dan '/trpc/(.*)' juga secara implisit dikecualikan di sini
   ],
 };

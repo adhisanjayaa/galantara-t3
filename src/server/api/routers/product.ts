@@ -3,6 +3,8 @@
 import { z } from "zod";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import { ProductCategory } from "@prisma/client";
+// [FIX] Impor unstable_cache
+import { unstable_cache } from "next/cache";
 
 export const productRouter = createTRPCRouter({
   /**
@@ -16,16 +18,27 @@ export const productRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      return ctx.db.product.findMany({
-        where: {
-          isActive: true,
-          category: input.category,
+      // [FIX] Bungkus query database dengan unstable_cache
+      // Ini akan menyimpan hasil query selama 60 detik.
+      return await unstable_cache(
+        async () => {
+          return ctx.db.product.findMany({
+            where: {
+              isActive: true,
+              category: input.category,
+            },
+            take: input.limit,
+            orderBy: {
+              name: "asc",
+            },
+          });
         },
-        take: input.limit,
-        orderBy: {
-          name: "asc",
+        // Buat kunci cache yang unik berdasarkan input
+        [`products-${input.category ?? "all"}-${input.limit ?? "none"}`],
+        {
+          revalidate: 60, // Detik
         },
-      });
+      )();
     }),
 
   /**
@@ -34,15 +47,22 @@ export const productRouter = createTRPCRouter({
   getProductById: publicProcedure
     .input(z.object({ id: z.string().cuid() }))
     .query(async ({ ctx, input }) => {
-      return ctx.db.product.findUnique({
-        where: {
-          id: input.id,
+      // [FIX] Terapkan cache di sini juga untuk halaman detail produk
+      return await unstable_cache(
+        async () => {
+          return ctx.db.product.findUnique({
+            where: {
+              id: input.id,
+            },
+            include: {
+              designTemplate: true,
+            },
+          });
         },
-        // [PERBAIKAN] Sertakan data dari relasi designTemplate
-        // agar data JSON-nya bisa diakses di frontend.
-        include: {
-          designTemplate: true,
+        [`product-${input.id}`], // Kunci cache unik per produk
+        {
+          revalidate: 60, // Detik
         },
-      });
+      )();
     }),
 });
