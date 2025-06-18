@@ -1,24 +1,18 @@
-// File: src/app/cart/components/CartView.tsx
 "use client";
 
-import type { RouterOutputs } from "~/trpc/react";
 import { api } from "~/trpc/react";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "~/components/ui/button";
 import { toast } from "sonner";
-import { useDebouncedCallback } from "use-debounce"; // <-- Impor hook untuk debounce callback
+// [DIHAPUS] Impor 'useDebouncedCallback' tidak lagi diperlukan
+// import { useDebouncedCallback } from "use-debounce";
+import { Loader2, Minus, Plus } from "lucide-react";
 
-type CartData = RouterOutputs["cart"]["getCart"];
-
-export function CartView({ initialCart }: { initialCart: CartData }) {
+export function CartView() {
   const utils = api.useUtils();
+  const { data: cart, isLoading } = api.cart.getCart.useQuery();
 
-  const { data: cart } = api.cart.getCart.useQuery(undefined, {
-    initialData: initialCart,
-  });
-
-  // 1. Definisikan kembali mutasi dengan logika Optimistic Update
   const updateQuantityMutation = api.cart.updateItemQuantity.useMutation({
     onMutate: async (newQuantityUpdate) => {
       await utils.cart.getCart.cancel();
@@ -36,7 +30,7 @@ export function CartView({ initialCart }: { initialCart: CartData }) {
       });
       return { previousCart };
     },
-    onError: (err, newQuantity, context) => {
+    onError: (_err, _newQuantity, context) => {
       if (context?.previousCart) {
         utils.cart.getCart.setData(undefined, context.previousCart);
       }
@@ -47,16 +41,9 @@ export function CartView({ initialCart }: { initialCart: CartData }) {
     },
   });
 
-  // 2. Buat fungsi yang di-debounce yang akan memanggil mutasi
-  const debouncedUpdateQuantity = useDebouncedCallback(
-    (vars: { cartItemId: string; quantity: number }) => {
-      updateQuantityMutation.mutate(vars);
-    },
-    500, // Tunggu 500ms setelah pengguna berhenti mengetik
-  );
+  // [DIHAPUS] Fungsi 'debouncedUpdateQuantity' tidak lagi digunakan
 
   const removeItemMutation = api.cart.removeItemFromCart.useMutation({
-    // Optimistic update untuk menghapus item
     onMutate: async (deletedItem) => {
       await utils.cart.getCart.cancel();
       const previousCart = utils.cart.getCart.getData();
@@ -74,7 +61,7 @@ export function CartView({ initialCart }: { initialCart: CartData }) {
     onSuccess: () => {
       toast.success("Item berhasil dihapus.");
     },
-    onError: (err, deletedItem, context) => {
+    onError: (_err, _deletedItem, context) => {
       if (context?.previousCart) {
         utils.cart.getCart.setData(undefined, context.previousCart);
       }
@@ -85,9 +72,17 @@ export function CartView({ initialCart }: { initialCart: CartData }) {
     },
   });
 
+  if (isLoading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Loader2 className="text-muted-foreground h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
   if (!cart || cart.items.length === 0) {
     return (
-      <div className="rounded-lg border-2 border-dashed py-16 text-center">
+      <div className="flex h-full flex-col items-center justify-center text-center">
         <h3 className="text-xl font-semibold">Keranjang Anda Kosong</h3>
         <Button asChild className="mt-4">
           <Link href="/themes">Mulai Belanja</Link>
@@ -102,22 +97,18 @@ export function CartView({ initialCart }: { initialCart: CartData }) {
   );
 
   return (
-    <div className="space-y-6">
-      <div className="divide-y rounded-lg border">
+    <div className="flex h-full flex-col">
+      <div className="flex-grow divide-y overflow-y-auto pr-6">
         {cart.items.map((item) => (
-          <div
-            key={item.id}
-            className="flex flex-col items-stretch gap-4 p-4 sm:flex-row sm:items-center"
-          >
+          <div key={item.id} className="flex items-start gap-4 py-4">
             <Image
               src={item.product.images[0] ?? ""}
               alt={item.product.name}
-              width={80}
-              height={80}
-              className="aspect-square w-full rounded-md object-cover sm:h-20 sm:w-20"
+              width={64}
+              height={64}
+              className="aspect-square rounded-md object-cover"
             />
             <div className="flex-grow">
-              {/* --- Tampilkan nama desain kustom jika ada --- */}
               {item.userDesign ? (
                 <>
                   <p className="font-medium">{item.userDesign.name}</p>
@@ -141,24 +132,62 @@ export function CartView({ initialCart }: { initialCart: CartData }) {
                 }).format(item.product.price)}
               </p>
             </div>
-            <div className="flex items-center justify-between gap-2">
-              <input
-                type="number"
-                // 3. Gunakan defaultValue agar input tidak "terkunci" oleh re-render
-                defaultValue={item.quantity}
-                onChange={(e) =>
-                  debouncedUpdateQuantity({
-                    cartItemId: item.id,
-                    quantity: Math.max(1, Number(e.target.value)),
-                  })
-                }
-                className="border-input w-16 rounded-md border p-2 text-center disabled:cursor-not-allowed disabled:opacity-50"
-                min="1"
-                // Produk yang didesain atau digital kuantitasnya 1
-                disabled={
-                  item.product.category === "DIGITAL" || !!item.userDesignId
-                }
-              />
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex items-center">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  disabled={
+                    item.quantity <= 1 ||
+                    updateQuantityMutation.isPending ||
+                    item.product.category === "DIGITAL"
+                  }
+                  onClick={() =>
+                    updateQuantityMutation.mutate({
+                      cartItemId: item.id,
+                      quantity: item.quantity - 1,
+                    })
+                  }
+                >
+                  <Minus className="h-4 w-4" />
+                </Button>
+                <input
+                  type="number"
+                  value={item.quantity}
+                  // [FIX] Mengganti pemanggilan debounce dengan pemanggilan mutasi langsung
+                  onChange={(e) => {
+                    const newQuantity = Math.max(
+                      1,
+                      parseInt(e.target.value, 10) || 1,
+                    );
+                    updateQuantityMutation.mutate({
+                      cartItemId: item.id,
+                      quantity: newQuantity,
+                    });
+                  }}
+                  className="h-8 w-12 border-y text-center font-medium"
+                  disabled={item.product.category === "DIGITAL"}
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  disabled={
+                    updateQuantityMutation.isPending ||
+                    item.product.category === "DIGITAL"
+                  }
+                  onClick={() =>
+                    updateQuantityMutation.mutate({
+                      cartItemId: item.id,
+                      quantity: item.quantity + 1,
+                    })
+                  }
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+
               <Button
                 variant="outline"
                 size="sm"
@@ -167,14 +196,14 @@ export function CartView({ initialCart }: { initialCart: CartData }) {
                 }
                 disabled={removeItemMutation.isPending}
               >
-                {removeItemMutation.isPending ? "..." : "Hapus"}
+                Hapus
               </Button>
             </div>
           </div>
         ))}
       </div>
-      <div className="bg-card rounded-lg border p-6">
-        <div className="flex justify-between text-lg font-medium">
+      <div className="mt-auto border-t p-6">
+        <div className="flex justify-between font-medium">
           <p>Subtotal</p>
           <p>
             {new Intl.NumberFormat("id-ID", {

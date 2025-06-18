@@ -1,41 +1,70 @@
+// File: src/app/admin/templates/components/AdminDesignHeader.tsx
+
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "~/trpc/react";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { toast } from "sonner";
 import type { Canvas } from "fabric";
-import { Save, Loader2, ArrowLeft } from "lucide-react";
+import { Save, Loader2, ArrowLeft, Undo2, Redo2 } from "lucide-react";
+import { Label } from "~/components/ui/label";
 
+// [FIX] Definisikan tipe spesifik untuk state halaman untuk menghindari 'any'.
+type PageState = {
+  name: string;
+  data: Record<string, unknown>;
+};
+
+/**
+ * Interface for the props of the AdminDesignHeader component.
+ */
 interface AdminDesignHeaderProps {
   templateId: string | null;
-  initialName: string;
+  templateName: string;
+  setTemplateName: (name: string) => void;
+  artboardWidth: number;
+  setArtboardWidth: (width: number) => void;
+  artboardHeight: number;
+  setArtboardHeight: (height: number) => void;
   canvasInstance: Canvas | null;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  getPagesForSave: () => PageState[]; // [FIX] Gunakan tipe PageState yang sudah didefinisikan.
 }
 
+/**
+ * Header component for the admin template editor.
+ * Manages template name, artboard dimensions, and save/history actions.
+ */
 export default function AdminDesignHeader({
-  templateId: initialTemplateId,
-  initialName,
+  templateId,
+  templateName,
+  setTemplateName,
+  artboardWidth,
+  setArtboardWidth,
+  artboardHeight,
+  setArtboardHeight,
   canvasInstance,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
+  getPagesForSave,
 }: AdminDesignHeaderProps) {
   const router = useRouter();
-  const [templateId, setTemplateId] = useState(initialTemplateId);
-  const [templateName, setTemplateName] = useState(initialName);
+  const utils = api.useUtils();
 
   const saveMutation = api.admin.createOrUpdateDesignTemplate.useMutation({
     onSuccess: (data) => {
       toast.success("Template berhasil disimpan!");
       if (!templateId) {
-        setTemplateId(data.id);
-        const newUrl = `/admin/templates/${data.id}`;
-        window.history.replaceState(
-          { ...window.history.state, as: newUrl, url: newUrl },
-          "",
-          newUrl,
-        );
+        router.replace(`/admin/templates/${data.id}`);
       }
+      void utils.admin.getDesignTemplates.invalidate();
     },
     onError: (error) => {
       toast.error(`Gagal menyimpan: ${error.message}`);
@@ -47,27 +76,53 @@ export default function AdminDesignHeader({
       toast.error("Nama template tidak boleh kosong.");
       return;
     }
-    // [FIX] Gunakan 'unknown' yang lebih aman daripada 'any'
-    const designData: unknown = canvasInstance.toJSON();
+
+    const designData = getPagesForSave();
+
     saveMutation.mutate({
       id: templateId ?? undefined,
       name: templateName,
-      designData,
+      // Backend mengharapkan array of JSON, jadi kita kirim seluruh state halaman
+      designData: designData,
+      artboardWidth,
+      artboardHeight,
     });
   };
 
   return (
-    <div className="bg-background flex h-16 items-center justify-between border-b px-4">
-      <div>
+    <header className="bg-background flex h-16 shrink-0 items-center justify-between border-b px-4">
+      {/* Left side: Navigation & History */}
+      <div className="flex items-center gap-1">
         <Button
           variant="ghost"
           size="icon"
           onClick={() => router.push("/admin/templates")}
         >
-          <ArrowLeft />
+          <ArrowLeft className="h-5 w-5" />
+          <span className="sr-only">Kembali ke Daftar Template</span>
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onUndo}
+          disabled={!canUndo}
+        >
+          <Undo2 className="h-4 w-4" />
+          <span className="sr-only">Undo</span>
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onRedo}
+          disabled={!canRedo}
+        >
+          <Redo2 className="h-4 w-4" />
+          <span className="sr-only">Redo</span>
         </Button>
       </div>
-      <div className="flex-grow text-center">
+
+      {/* Center: Template Name and Dimensions */}
+      <div className="flex flex-grow items-center justify-center gap-4 text-center">
         <Input
           placeholder="Nama Template"
           type="text"
@@ -75,7 +130,35 @@ export default function AdminDesignHeader({
           value={templateName}
           onChange={(e) => setTemplateName(e.target.value)}
         />
+        <div className="flex items-center gap-2">
+          <Label htmlFor="width" className="text-xs">
+            W:
+          </Label>
+          <Input
+            id="width"
+            type="number"
+            className="h-8 w-20"
+            value={artboardWidth}
+            onChange={(e) => setArtboardWidth(Number(e.target.value))}
+            min={100}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="height" className="text-xs">
+            H:
+          </Label>
+          <Input
+            id="height"
+            type="number"
+            className="h-8 w-20"
+            value={artboardHeight}
+            onChange={(e) => setArtboardHeight(Number(e.target.value))}
+            min={100}
+          />
+        </div>
       </div>
+
+      {/* Right side: Save Action */}
       <div className="flex items-center gap-2">
         <Button
           onClick={handleSave}
@@ -90,6 +173,6 @@ export default function AdminDesignHeader({
           Simpan Template
         </Button>
       </div>
-    </div>
+    </header>
   );
 }
