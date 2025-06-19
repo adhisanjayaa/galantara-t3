@@ -1,8 +1,9 @@
+// File: src/app/design/components/EditorToolbar.tsx
+
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import type { Canvas } from "fabric";
-import { Rect, Circle, Textbox } from "fabric";
 import {
   Type,
   Square,
@@ -46,34 +47,28 @@ import {
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 
-/**
- * Type definition for the state of a single page.
- * It includes the page name and its Fabric.js JSON data.
- */
 type PageState = {
   name: string;
   data: Record<string, unknown>;
 };
 
-/**
- * Props for the EditorToolbar component.
- */
+// [DIUBAH] Interface props diperbarui untuk menerima semua handler dari parent
 interface EditorToolbarProps {
-  canvas: Canvas | null;
   onAddImage: () => void;
   onAddQrcode: () => void;
+  onAddText: () => void;
+  onAddRectangle: () => void;
+  onAddCircle: () => void;
   scale: number;
   onZoom: (action: "in" | "out" | "reset") => void;
   pages: PageState[];
   currentPageIndex: number;
   onPageChange: (index: number) => void;
-  onAddPage?: () => void; // Optional: for admin
-  onRenamePage?: (index: number, newName: string) => void; // Optional: for admin
+  onAddPage?: () => void;
+  onRenamePage?: (index: number, newName: string) => void;
 }
 
-/**
- * A dialog component for renaming a page.
- */
+// Komponen dialog untuk mengubah nama halaman tetap ada di sini
 function RenamePageDialog({
   pageName,
   onSave,
@@ -83,7 +78,7 @@ function RenamePageDialog({
   onSave: (newName: string) => void;
   children: React.ReactNode;
 }) {
-  const [name, setName] = useState(pageName);
+  const [name, setName] = React.useState(pageName);
 
   const handleSave = () => {
     if (name.trim()) {
@@ -94,7 +89,6 @@ function RenamePageDialog({
   return (
     <AlertDialog
       onOpenChange={(isOpen) => {
-        // Reset name to the original if the dialog is closed without saving
         if (!isOpen) {
           setName(pageName);
         }
@@ -120,14 +114,12 @@ function RenamePageDialog({
               if (e.key === "Enter") {
                 e.preventDefault();
                 handleSave();
-                // Find the close button and click it programmatically.
-                // We cast the element to HTMLButtonElement to satisfy TypeScript.
-                const closeButton = (e.target as HTMLElement)
+                (e.target as HTMLElement)
                   .closest<HTMLElement>('div[role="dialog"]')
                   ?.querySelector<HTMLButtonElement>(
                     'button[data-slot="dialog-close"]',
-                  );
-                closeButton?.click();
+                  )
+                  ?.click();
               }
             }}
           />
@@ -141,14 +133,12 @@ function RenamePageDialog({
   );
 }
 
-/**
- * The main toolbar component for the editor.
- * Contains tools for adding objects, managing pages, and controlling zoom.
- */
 export default function EditorToolbar({
-  canvas,
   onAddImage,
   onAddQrcode,
+  onAddText,
+  onAddRectangle,
+  onAddCircle,
   scale,
   onZoom,
   pages,
@@ -157,38 +147,8 @@ export default function EditorToolbar({
   onAddPage,
   onRenamePage,
 }: EditorToolbarProps) {
-  const addText = () => {
-    if (!canvas) return;
-    const text = new Textbox("Teks Anda", {
-      fontSize: 24,
-      fill: "#000000",
-      padding: 10,
-      editable: true,
-      width: 200,
-    });
-    canvas.add(text);
-    canvas.centerObject(text);
-    canvas.setActiveObject(text);
-    canvas.renderAll();
-  };
-
-  const addRectangle = () => {
-    if (!canvas) return;
-    const rect = new Rect({ width: 100, height: 100, fill: "#cccccc" });
-    canvas.add(rect);
-    canvas.centerObject(rect);
-    canvas.setActiveObject(rect);
-    canvas.renderAll();
-  };
-
-  const addCircle = () => {
-    if (!canvas) return;
-    const circle = new Circle({ radius: 50, fill: "#cccccc" });
-    canvas.add(circle);
-    canvas.centerObject(circle);
-    canvas.setActiveObject(circle);
-    canvas.renderAll();
-  };
+  // [DIHAPUS] Fungsi-fungsi internal untuk menambah objek dihapus.
+  // Logikanya sekarang diangkat ke parent (page.tsx) dan diterima melalui props.
 
   return (
     <TooltipProvider>
@@ -202,15 +162,19 @@ export default function EditorToolbar({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="bottom" align="center" className="w-48">
-            <DropdownMenuItem onClick={addText} className="cursor-pointer">
+            {/* [DIUBAH] onClick sekarang memanggil fungsi dari props */}
+            <DropdownMenuItem onClick={onAddText} className="cursor-pointer">
               <Type className="mr-2 h-4 w-4" />
               <span>Text</span>
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={addRectangle} className="cursor-pointer">
+            <DropdownMenuItem
+              onClick={onAddRectangle}
+              className="cursor-pointer"
+            >
               <Square className="mr-2 h-4 w-4" />
               <span>Rectangle</span>
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={addCircle} className="cursor-pointer">
+            <DropdownMenuItem onClick={onAddCircle} className="cursor-pointer">
               <CircleIcon className="mr-2 h-4 w-4" />
               <span>Circle</span>
             </DropdownMenuItem>
@@ -238,8 +202,6 @@ export default function EditorToolbar({
               </span>
             </Button>
           </DropdownMenuTrigger>
-          {/* --- PERUBAHAN DI SINI --- */}
-          {/* Mengubah 'side' dari "top" menjadi "bottom" */}
           <DropdownMenuContent side="bottom" align="center" className="w-56">
             {pages.map((page, index) => (
               <DropdownMenuItem

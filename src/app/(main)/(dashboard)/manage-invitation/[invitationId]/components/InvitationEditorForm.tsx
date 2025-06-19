@@ -1,7 +1,11 @@
+// File: src/app/(main)/(dashboard)/manage-invitation/[invitationId]/components/InvitationEditorForm.tsx
+
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useForm, FormProvider } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import type { RouterOutputs } from "~/trpc/react";
 import { api } from "~/trpc/react";
 import { Button } from "~/components/ui/button";
@@ -12,8 +16,8 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
-import { Badge } from "~/components/ui/badge";
 import { toast } from "sonner";
+import { Badge } from "~/components/ui/badge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,15 +29,19 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "~/components/ui/alert-dialog";
+import { Textarea } from "~/components/ui/textarea";
+import { Label } from "~/components/ui/label";
+
+// Impor komponen-komponen anak
+import { CoupleProfileSection } from "./CoupleProfileSection";
+import { EventListEditor } from "./EventListEditor";
+import { GalleryUpload } from "./GalleryUpload";
+import { MusicUpload } from "./MusicUpload";
+
+// Impor skema dan tipe dari file terpusat
+import { weddingFormSchema, type WeddingFormData } from "~/lib/formSchemas";
 
 type InvitationDetails = RouterOutputs["invitation"]["getInvitationDetails"];
-
-type FormSchemaField = {
-  name: string;
-  label: string;
-  type: "text" | "date" | "textarea";
-  placeholder?: string;
-};
 
 export function InvitationEditorForm({
   invitation,
@@ -42,38 +50,60 @@ export function InvitationEditorForm({
 }) {
   const router = useRouter();
 
-  // Definisikan variabel dengan jelas untuk menghindari kebingungan
-  const product = invitation.orderItem.product;
-  const productType = product.productType;
+  // Inisialisasi React Hook Form dengan skema Zod
+  const methods = useForm<WeddingFormData>({
+    resolver: zodResolver(weddingFormSchema),
+    // Default values untuk memastikan field array tidak pernah 'undefined'
+    defaultValues: {
+      events: [],
+      gallery_photo_urls: [],
+      digital_gifts: [],
+    },
+  });
 
-  // Ambil formSchema dari 'product', sesuai dengan struktur data yang kita inginkan
-  const formSchema = product.formSchema as FormSchemaField[];
-
-  const [formData, setFormData] = useState<Record<string, string>>({});
-
+  // Efek untuk mengisi form dengan data dari server saat komponen dimuat
   useEffect(() => {
-    if (invitation.formData && typeof invitation.formData === "object") {
-      setFormData(invitation.formData as Record<string, string>);
-    }
-  }, [invitation.formData]);
+    const formDataFromServer =
+      invitation.formData as Partial<WeddingFormData> | null;
 
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
+    // Nilai default untuk memastikan field array selalu ada
+    const defaultArrayValues = {
+      events: [],
+      gallery_photo_urls: [],
+      digital_gifts: [],
+    };
 
+    // Gabungkan nilai default dengan data dari server
+    const valuesToSet = {
+      ...defaultArrayValues,
+      ...formDataFromServer,
+    };
+
+    methods.reset(valuesToSet);
+  }, [invitation.formData, methods]);
+
+  // Mutasi untuk menyimpan perubahan data form
   const updateMutation = api.invitation.updateInvitationData.useMutation({
     onSuccess: () => {
       toast.success("Perubahan berhasil disimpan!");
       router.refresh();
     },
     onError: (error) => {
-      toast.error(`Gagal menyimpan: ${error.message}`);
+      // Menampilkan error validasi Zod jika ada
+      const zodError = error.data?.zodError;
+      if (zodError) {
+        Object.values(zodError.fieldErrors)
+          .flat()
+          .forEach((errorMessage) => {
+            if (typeof errorMessage === "string") toast.error(errorMessage);
+          });
+      } else {
+        toast.error(`Gagal menyimpan: ${error.message}`);
+      }
     },
   });
 
+  // Mutasi untuk mengaktifkan undangan
   const activateMutation = api.invitation.activateInvitation.useMutation({
     onSuccess: () => {
       toast.success("Selamat! Undangan Anda sekarang aktif.");
@@ -84,11 +114,11 @@ export function InvitationEditorForm({
     },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Handler saat form di-submit
+  const onSubmit = (data: WeddingFormData) => {
     updateMutation.mutate({
       invitationId: invitation.id,
-      formData: formData,
+      formData: data,
     });
   };
 
@@ -97,17 +127,15 @@ export function InvitationEditorForm({
   };
 
   return (
-    <>
-      <form onSubmit={handleSubmit}>
+    <FormProvider {...methods}>
+      <form onSubmit={methods.handleSubmit(onSubmit)} className="space-y-6">
         <Card>
           <CardHeader>
             <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                {/* Gunakan nama dari Tipe Produk untuk judul */}
-                <CardTitle>{productType.name}</CardTitle>
+                <CardTitle>Editor Undangan Digital</CardTitle>
                 <CardDescription>
-                  Isi detail untuk undangan Anda sesuai dengan kolom yang
-                  tersedia.
+                  Isi semua detail undangan pernikahan Anda di bawah ini.
                 </CardDescription>
               </div>
               <Badge
@@ -119,31 +147,37 @@ export function InvitationEditorForm({
               </Badge>
             </div>
           </CardHeader>
-          <CardContent className="space-y-6 pt-6">
-            {formSchema.map((field) => (
-              <div key={field.name}>
-                <label
-                  htmlFor={field.name}
-                  className="block text-sm font-medium text-gray-700"
-                >
-                  {field.label}
-                </label>
-                <div className="mt-1">
-                  <input
-                    type={field.type}
-                    name={field.name}
-                    id={field.name}
-                    className="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
-                    placeholder={field.placeholder ?? ""}
-                    value={formData[field.name] ?? ""}
-                    onChange={handleInputChange}
-                  />
-                </div>
+          <CardContent className="space-y-8">
+            <CoupleProfileSection />
+            <EventListEditor />
+            <GalleryUpload />
+            <MusicUpload />
+
+            {/* Bagian untuk input sederhana lainnya */}
+            <div className="space-y-4 rounded-lg border p-4">
+              <h3 className="text-lg font-semibold">Informasi Tambahan</h3>
+              <div>
+                <Label htmlFor="quote">Kutipan (Quote)</Label>
+                <Textarea
+                  id="quote"
+                  placeholder="cth. Dan di antara tanda-tanda kekuasaan-Nya..."
+                  {...methods.register("quote")}
+                />
               </div>
-            ))}
+              <div>
+                <Label htmlFor="story">Cerita Cinta</Label>
+                <Textarea
+                  id="story"
+                  placeholder="Ceritakan bagaimana perjalanan cinta Anda dimulai..."
+                  {...methods.register("story")}
+                  rows={5}
+                />
+              </div>
+            </div>
           </CardContent>
         </Card>
 
+        {/* Baris Tombol Aksi */}
         <div className="mt-6 flex items-center justify-between">
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -151,7 +185,7 @@ export function InvitationEditorForm({
                 type="button"
                 variant="outline"
                 disabled={
-                  invitation.status === "ACTIVE" || activateMutation.isPending
+                  invitation.status !== "DRAFT" || activateMutation.isPending
                 }
               >
                 {activateMutation.isPending
@@ -182,6 +216,6 @@ export function InvitationEditorForm({
           </Button>
         </div>
       </form>
-    </>
+    </FormProvider>
   );
 }

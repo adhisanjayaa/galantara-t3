@@ -39,6 +39,7 @@ enum AddressType {
 model ProductType {
   id        String    @id @default(cuid())
   name      String    @unique
+  schemaIdentifier String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   products  Product[]
@@ -60,7 +61,6 @@ model Product {
   themeIdentifier  String?
   isDesignable     Boolean         @default(false)
   designConfig     Json?
-  formSchema       Json            @default("[]") // Pastikan baris ini ada
 
   productTypeId    String
   productType      ProductType     @relation(fields: [productTypeId], references: [id])
@@ -74,27 +74,27 @@ model Product {
 }
 
 model DesignTemplate {
-  id         String    @id @default(cuid())
-  name       String    @unique
-  designData Json
-  artboardWidth    Int?
-  artboardHeight   Int?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  products   Product[]
+  id             String    @id @default(cuid())
+  name           String    @unique
+  designData     Json[]    @default([]) // Pastikan tipenya Json[] dan ada default
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  artboardHeight Int?
+  artboardWidth  Int?
+  products       Product[]
 }
 
 model UserDesign {
-  id         String     @id @default(cuid())
+  id         String   @id @default(cuid())
   name       String
   userId     String
   productId  String
-  product    Product    @relation(fields: [productId], references: [id])
-  designData Json
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-  cartItems  CartItem[]
-  orderItems OrderItem[]
+  product    Product  @relation(fields: [productId], references: [id])
+  designData Json[]   @default([]) // Pastikan tipenya Json[] dan ada default
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  CartItem   CartItem[]
+  OrderItem  OrderItem[]
 }
 
 model Cart {
@@ -179,4 +179,15 @@ model Address {
   updatedAt   DateTime    @updatedAt
 
   @@unique([userId, type])
+}
+
+model CustomFont {
+  id        String   @id @default(cuid())
+  name      String   // Nama font yang akan tampil di editor, cth: "Poppins"
+  weight    String   // Berat font, cth: "400" (regular), "700" (bold)
+  style     String   // Gaya font, cth: "normal", "italic"
+  url       String   @unique // URL ke file font di Supabase Storage
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

@@ -1,4 +1,5 @@
 // File: src/server/api/routers/storage.ts
+
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
@@ -6,26 +7,43 @@ import { supabase } from "~/server/lib/supabase";
 import { randomUUID } from "crypto";
 
 export const storageRouter = createTRPCRouter({
-  /**
-   * Membuat Pre-signed URL untuk mengunggah file ke Supabase Storage.
-   * Ini adalah cara aman untuk memungkinkan klien mengunggah file secara langsung.
-   */
   createPresignedUrl: protectedProcedure
     .input(
       z.object({
-        fileType: z.string().startsWith("image/"), // Hanya izinkan tipe file gambar
+        fileType: z.string().refine(
+          (val) => {
+            if (val === "") return true; // Menangani kasus browser tidak mengirim tipe
+
+            // [FIX] Logika ini mengizinkan gambar, audio, dan font
+            return (
+              val.startsWith("image/") ||
+              val.startsWith("audio/") || // <-- Baris ini mengizinkan file musik
+              val.startsWith("font/") ||
+              val.startsWith("application/") // Fallback untuk beberapa tipe font
+            );
+          },
+          {
+            // [FIX] Pesan error juga diperbarui untuk mencerminkan izin baru
+            message:
+              "Tipe file tidak didukung. Harap unggah gambar, musik, atau file font.",
+          },
+        ),
       }),
     )
     .mutation(async ({ input, ctx }) => {
       const { fileType } = input;
       const userId = ctx.userId;
 
-      // Buat nama file yang unik untuk menghindari konflik
-      const fileExtension = fileType.split("/")[1];
-      const fileName = `${userId}/${randomUUID()}.${fileExtension}`;
-      const bucketName = "design-assets"; // Ganti dengan nama bucket Anda di Supabase
+      let fileExtension = "bin";
+      if (fileType) {
+        fileExtension = fileType.split("/")[1] ?? "bin";
+        // Menangani kasus umum seperti 'audio/mpeg' menjadi 'mp3'
+        if (fileExtension === "mpeg") fileExtension = "mp3";
+      }
 
-      // Buat pre-signed URL dengan izin 'upload'
+      const fileName = `${userId}/${randomUUID()}.${fileExtension}`;
+      const bucketName = "design-assets";
+
       const { data, error } = await supabase.storage
         .from(bucketName)
         .createSignedUploadUrl(fileName);
@@ -38,15 +56,14 @@ export const storageRouter = createTRPCRouter({
         });
       }
 
-      // Ambil URL publik dari file yang akan diunggah
       const { data: publicUrlData } = supabase.storage
         .from(bucketName)
-        .getPublicUrl(fileName);
+        .getPublicUrl(data.path);
 
       return {
         uploadUrl: data.signedUrl,
         publicUrl: publicUrlData.publicUrl,
-        filePath: data.path, // Path file di bucket
+        filePath: data.path,
       };
     }),
 });

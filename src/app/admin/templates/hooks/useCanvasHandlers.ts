@@ -1,259 +1,90 @@
 // File: src/app/admin/templates/hooks/useCanvasHandlers.ts
-
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import {
   type Canvas,
   type FabricObject,
-  IText,
   Rect,
+  Circle,
+  Textbox,
   FabricImage,
 } from "fabric";
 import QRCode from "qrcode";
 import { toast } from "sonner";
+import type { ICommand } from "./useCanvasHistory";
 
-// Tipe untuk state dan action dari reducer history
-type HistoryState = { history: string[]; index: number };
-type HistoryAction =
-  | { type: "UNDO" }
-  | { type: "REDO" }
-  | { type: "RESET"; payload: string }
-  | { type: "SAVE"; payload: string };
-
-// --- [FIX] Definisikan tipe kustom untuk objek gambar QR Code ---
+// Definisikan tipe untuk gambar QR code
 interface IQrCodeImage extends FabricImage {
   isQrcode: true;
   qrcodeData: string;
   qrcodeFill: string;
 }
 
-// Tipe untuk props yang diterima oleh custom hook ini
+// Definisikan tipe untuk constructor Command yang akan diterima sebagai props
+interface ICommands {
+  UpdateObjectCommand: new (
+    canvas: Canvas,
+    target: FabricObject,
+    initialState: Record<string, unknown>,
+    finalState: Record<string, unknown>,
+  ) => ICommand;
+  AddObjectCommand: new (canvas: Canvas, target: FabricObject) => ICommand;
+  RemoveObjectCommand: new (canvas: Canvas, target: FabricObject) => ICommand;
+}
+
+// Definisikan props untuk hook useCanvasHandlers
 interface UseCanvasHandlersProps {
   canvasInstance: Canvas | null;
   activeObject: FabricObject | null;
-  historyState: HistoryState;
-  dispatchHistory: React.Dispatch<HistoryAction>;
-  isHistoryProcessing: React.RefObject<boolean>;
-  saveHistory: () => void;
-  setForceRender: React.Dispatch<React.SetStateAction<number>>;
+  executeCommand: (command: ICommand) => void;
+  Commands: ICommands;
 }
 
-/**
- * Custom hook yang berisi semua fungsi untuk memanipulasi objek dan state kanvas.
- * @param props - State dan dispatcher yang diperlukan dari komponen utama.
- * @returns - Sebuah objek yang berisi semua fungsi handler.
- */
 export function useCanvasHandlers({
   canvasInstance,
   activeObject,
-  historyState,
-  dispatchHistory,
-  isHistoryProcessing,
-  saveHistory,
-  setForceRender,
+  executeCommand,
+  Commands,
 }: UseCanvasHandlersProps) {
-  /**
-   * Memperbarui gambar QR Code berdasarkan data atau warna baru.
-   */
-  const updateQrcode = useCallback(
-    async (
-      qrcodeObject: IQrCodeImage, // [FIX] Gunakan tipe kustom
-      options: { newColor?: string; newData?: string },
-    ) => {
-      if (!canvasInstance) return;
+  // --- Refs untuk menangani perubahan interaktif ---
+  const isChangingInteractively = useRef(false);
+  const objectStateBeforeInteractiveChange = useRef<Record<
+    string,
+    unknown
+  > | null>(null);
 
-      const data = options.newData ?? qrcodeObject.qrcodeData;
-      const color = options.newColor ?? qrcodeObject.qrcodeFill;
+  // --- Handlers untuk Menambah Objek ---
 
-      try {
-        const dataUrl = await QRCode.toDataURL(data, {
-          width: 200,
-          margin: 1,
-          color: { dark: color, light: "#0000" }, // Latar belakang transparan
-        });
-        await qrcodeObject.setSrc(dataUrl);
-        qrcodeObject.qrcodeData = data;
-        qrcodeObject.qrcodeFill = color;
-        canvasInstance.renderAll();
-        saveHistory();
-      } catch (err) {
-        // [FIX] Hapus warning variabel tidak terpakai dengan console.error
-        console.error("Gagal membuat QR Code:", err);
-        toast.error("Gagal membuat QR Code. Pastikan link valid.");
-      }
-    },
-    [canvasInstance, saveHistory],
-  );
-
-  /**
-   * Mengubah properti dari objek yang aktif.
-   */
-  const handlePropertyChange = (prop: string, value: unknown) => {
-    // [FIX] Ganti any dengan unknown
-    if (!activeObject || !canvasInstance) return;
-    if (prop === "fill" && (activeObject as IQrCodeImage).isQrcode) {
-      void updateQrcode(activeObject as IQrCodeImage, {
-        newColor: value as string,
-      });
-      return;
-    }
-    if (prop === "cornerRadius" && activeObject instanceof Rect) {
-      activeObject.set("rx", value as number);
-      activeObject.set("ry", value as number);
-    } else {
-      activeObject.set(prop as keyof FabricObject, value);
-    }
-    canvasInstance.renderAll();
-    saveHistory();
-    setForceRender((c) => c + 1); // Memaksa render ulang popover
-  };
-
-  /**
-   * Mengubah data (URL) dari objek QR Code yang aktif.
-   */
-  const handleQrcodeDataChange = (data: string) => {
-    if (!activeObject || !(activeObject as IQrCodeImage).isQrcode) return;
-    (activeObject as IQrCodeImage).qrcodeData = data;
-    void updateQrcode(activeObject as IQrCodeImage, { newData: data });
-    setForceRender((c) => c + 1);
-  };
-
-  /**
-   * Mengubah perataan teks (text align) dari objek teks yang aktif.
-   */
-  const handleTextAlignChange = (align: "left" | "center" | "right") => {
-    if (!(activeObject instanceof IText) || !canvasInstance) return;
-    activeObject.set("textAlign", align);
-    canvasInstance.renderAll();
-    saveHistory();
-    setForceRender((c) => c + 1);
-  };
-
-  /**
-   * Mengaktifkan/menonaktifkan style (bold, italic, underline) pada objek teks.
-   */
-  const handleToggleStyle = (style: "Bold" | "Italic" | "Underline") => {
-    if (!(activeObject instanceof IText) || !canvasInstance) return;
-    switch (style) {
-      case "Bold":
-        activeObject.set(
-          "fontWeight",
-          activeObject.fontWeight === "bold" ? "normal" : "bold",
-        );
-        break;
-      case "Italic":
-        activeObject.set(
-          "fontStyle",
-          activeObject.fontStyle === "italic" ? "normal" : "italic",
-        );
-        break;
-      case "Underline":
-        activeObject.set("underline", !activeObject.underline);
-        break;
-    }
-    canvasInstance.renderAll();
-    saveHistory();
-    setForceRender((c) => c + 1);
-  };
-
-  /**
-   * Menambah atau mengurangi ukuran font.
-   */
-  const handleFontSizeStep = (step: number) => {
-    if (!(activeObject instanceof IText)) return;
-    const newSize = Math.max(1, (activeObject.fontSize || 0) + step);
-    handlePropertyChange("fontSize", newSize);
-  };
-
-  /**
-   * Mengunci atau membuka kunci objek agar tidak bisa digerakkan/diubah ukurannya.
-   */
-  const handleToggleLock = () => {
-    if (!activeObject || !canvasInstance) return;
-    const isLocked = !activeObject.lockMovementX;
-    activeObject.set({
-      lockMovementX: isLocked,
-      lockMovementY: isLocked,
-      lockRotation: isLocked,
-      lockScalingX: isLocked,
-      lockScalingY: isLocked,
-      hasControls: !isLocked,
+  const handleAddText = useCallback(() => {
+    if (!canvasInstance) return;
+    const text = new Textbox("Teks Anda", {
+      fontSize: 48,
+      fill: "#000000",
+      padding: 10,
+      width: 250,
     });
-    canvasInstance.renderAll();
-    setForceRender((c) => c + 1);
-  };
+    canvasInstance.centerObject(text);
+    const command = new Commands.AddObjectCommand(canvasInstance, text);
+    executeCommand(command);
+  }, [canvasInstance, Commands.AddObjectCommand, executeCommand]);
 
-  /**
-   * Menghapus objek yang sedang aktif dari kanvas.
-   */
-  const handleDeleteObject = () => {
-    if (activeObject && canvasInstance) {
-      canvasInstance.remove(activeObject);
-      canvasInstance.discardActiveObject();
-      canvasInstance.renderAll();
-      saveHistory();
-    }
-  };
+  const handleAddRectangle = useCallback(() => {
+    if (!canvasInstance) return;
+    const rect = new Rect({ width: 200, height: 150, fill: "#cccccc" });
+    canvasInstance.centerObject(rect);
+    const command = new Commands.AddObjectCommand(canvasInstance, rect);
+    executeCommand(command);
+  }, [canvasInstance, Commands.AddObjectCommand, executeCommand]);
 
-  /**
-   * Mengembalikan state kanvas ke kondisi sebelumnya (Undo).
-   */
-  const handleUndo = async () => {
-    if (historyState.index > 0 && canvasInstance) {
-      isHistoryProcessing.current = true;
-      const targetState = historyState.history[historyState.index - 1]!;
-      await canvasInstance.loadFromJSON(targetState, () => {
-        canvasInstance.renderAll();
-      });
-      dispatchHistory({ type: "UNDO" });
-      isHistoryProcessing.current = false;
-    }
-  };
+  const handleAddCircle = useCallback(() => {
+    if (!canvasInstance) return;
+    const circle = new Circle({ radius: 80, fill: "#cccccc" });
+    canvasInstance.centerObject(circle);
+    const command = new Commands.AddObjectCommand(canvasInstance, circle);
+    executeCommand(command);
+  }, [canvasInstance, Commands.AddObjectCommand, executeCommand]);
 
-  /**
-   * Mengembalikan state kanvas ke kondisi setelahnya (Redo).
-   */
-  const handleRedo = async () => {
-    if (
-      historyState.index < historyState.history.length - 1 &&
-      canvasInstance
-    ) {
-      isHistoryProcessing.current = true;
-      const targetState = historyState.history[historyState.index + 1]!;
-      await canvasInstance.loadFromJSON(targetState, () => {
-        canvasInstance.renderAll();
-      });
-      dispatchHistory({ type: "REDO" });
-      isHistoryProcessing.current = false;
-    }
-  };
-
-  /**
-   * Memindahkan objek satu lapis ke depan (Bring Forward).
-   */
-  const handleBringObjectForward = () => {
-    if (activeObject && canvasInstance) {
-      canvasInstance.bringObjectForward(activeObject);
-      canvasInstance.renderAll();
-      saveHistory();
-    }
-  };
-
-  /**
-   * Memindahkan objek satu lapis ke belakang (Send Backward).
-   */
-  const handleSendObjectBackwards = () => {
-    if (activeObject && canvasInstance) {
-      canvasInstance.sendObjectBackwards(activeObject);
-      canvasInstance.renderAll();
-      saveHistory();
-    }
-  };
-
-  /**
-   * Menambahkan objek QR Code baru ke kanvas.
-   */
   const handleAddQrcode = useCallback(async () => {
     if (!canvasInstance) return;
     const qrcodeValue = "https://galantara.com";
@@ -261,38 +92,252 @@ export function useCanvasHandlers({
       const dataUrl = await QRCode.toDataURL(qrcodeValue, {
         width: 200,
         margin: 1,
-        color: { dark: "#000000", light: "#0000" },
+        color: { dark: "#000000", light: "#0000" }, // Latar belakang transparan
       });
       const img = await FabricImage.fromURL(dataUrl);
-
-      // [FIX] Assign properti kustom dengan benar
-      const qrcodeImage = img as IQrCodeImage;
-      qrcodeImage.isQrcode = true;
-      qrcodeImage.qrcodeData = qrcodeValue;
-      qrcodeImage.qrcodeFill = "#000000";
-
-      canvasInstance.add(qrcodeImage);
-      canvasInstance.centerObject(qrcodeImage);
-      canvasInstance.setActiveObject(qrcodeImage);
-      saveHistory();
+      Object.assign(img, {
+        isQrcode: true,
+        qrcodeData: qrcodeValue,
+        qrcodeFill: "#000000",
+      });
+      canvasInstance.centerObject(img);
+      const command = new Commands.AddObjectCommand(canvasInstance, img);
+      executeCommand(command);
     } catch (err) {
-      console.error(err);
-      toast.error("Gagal membuat QR code.");
+      console.error("Gagal membuat QR code:", err);
+      const message =
+        err instanceof Error ? err.message : "Terjadi kesalahan tidak dikenal.";
+      toast.error(`Gagal membuat QR code: ${message}`);
     }
-  }, [canvasInstance, saveHistory]);
+  }, [canvasInstance, executeCommand, Commands.AddObjectCommand]);
+
+  // --- Handlers untuk Mengubah Properti Objek ---
+
+  const updateQrcode = useCallback(
+    async (
+      qrcodeObject: IQrCodeImage,
+      options: { newColor?: string; newData?: string },
+    ) => {
+      if (!canvasInstance) return;
+      const data = options.newData ?? qrcodeObject.qrcodeData;
+      const color = options.newColor ?? qrcodeObject.qrcodeFill;
+      try {
+        const dataUrl = await QRCode.toDataURL(data, {
+          width: 200,
+          margin: 1,
+          color: { dark: color, light: "#0000" },
+        });
+        await qrcodeObject.setSrc(dataUrl, { crossOrigin: "anonymous" });
+        qrcodeObject.qrcodeData = data;
+        qrcodeObject.qrcodeFill = color;
+        canvasInstance.renderAll();
+      } catch (err) {
+        toast.error("Gagal memperbarui QR Code. Pastikan link valid.");
+      }
+    },
+    [canvasInstance],
+  );
+
+  /**
+   * Untuk perubahan properti yang terjadi sekali klik (misal: bold, ganti font).
+   */
+  const handlePropertyChange = useCallback(
+    (prop: string, value: unknown) => {
+      if (!activeObject || !canvasInstance) return;
+      const initialState = activeObject.toObject();
+      if (prop === "cornerRadius" && activeObject instanceof Rect) {
+        activeObject.set({ rx: value as number, ry: value as number });
+      } else {
+        activeObject.set(prop as keyof FabricObject, value);
+      }
+      const finalState = activeObject.toObject();
+      const command = new Commands.UpdateObjectCommand(
+        canvasInstance,
+        activeObject,
+        initialState,
+        finalState,
+      );
+      executeCommand(command);
+    },
+    [
+      activeObject,
+      canvasInstance,
+      Commands.UpdateObjectCommand,
+      executeCommand,
+    ],
+  );
+
+  /**
+   * Merekam state objek sebelum interaksi (untuk slider, color picker).
+   * Dipanggil pada onFocus atau onPointerDown.
+   */
+  const recordStateBeforeInteractiveChange = useCallback(() => {
+    if (activeObject) {
+      const relevantProps = [
+        "fill",
+        "charSpacing",
+        "lineHeight",
+        "isQrcode",
+        "qrcodeFill",
+      ];
+      objectStateBeforeInteractiveChange.current =
+        activeObject.toObject(relevantProps);
+    }
+  }, [activeObject]);
+
+  /**
+   * Mengubah properti objek secara visual secara real-time tanpa menyimpan ke history.
+   * Dipanggil pada onInput atau onValueChange.
+   */
+  const handleInteractiveChange = useCallback(
+    (prop: string, value: string | number) => {
+      if (!activeObject || !canvasInstance) return;
+      if (prop === "fill" && (activeObject as IQrCodeImage).isQrcode) {
+        void updateQrcode(activeObject as IQrCodeImage, {
+          newColor: value as string,
+        });
+      } else {
+        activeObject.set(prop as keyof FabricObject, value);
+      }
+      isChangingInteractively.current = true;
+      canvasInstance.renderAll();
+    },
+    [activeObject, canvasInstance, updateQrcode],
+  );
+
+  /**
+   * Menyimpan perubahan final ke dalam history setelah interaksi selesai.
+   * Dipanggil pada onBlur atau onPointerUp.
+   */
+  const handleInteractiveChangeCommit = useCallback(() => {
+    if (
+      isChangingInteractively.current &&
+      canvasInstance &&
+      activeObject &&
+      objectStateBeforeInteractiveChange.current
+    ) {
+      const initialState = objectStateBeforeInteractiveChange.current;
+      const finalState = activeObject.toObject(Object.keys(initialState));
+      if (JSON.stringify(initialState) !== JSON.stringify(finalState)) {
+        const command = new Commands.UpdateObjectCommand(
+          canvasInstance,
+          activeObject,
+          initialState,
+          finalState,
+        );
+        executeCommand(command);
+      }
+      isChangingInteractively.current = false;
+      objectStateBeforeInteractiveChange.current = null;
+    }
+  }, [
+    canvasInstance,
+    activeObject,
+    Commands.UpdateObjectCommand,
+    executeCommand,
+  ]);
+
+  const handleQrcodeDataChange = useCallback(
+    (data: string) => {
+      if (!activeObject || !(activeObject as IQrCodeImage).isQrcode) return;
+      recordStateBeforeInteractiveChange(); // Rekam state awal
+      void updateQrcode(activeObject as IQrCodeImage, { newData: data }).then(
+        () => {
+          handleInteractiveChangeCommit(); // Commit perubahan setelah qrcode di-update
+        },
+      );
+    },
+    [
+      activeObject,
+      updateQrcode,
+      recordStateBeforeInteractiveChange,
+      handleInteractiveChangeCommit,
+    ],
+  );
+
+  // --- Handlers untuk Aksi Umum ---
+
+  const handleDeleteObject = useCallback(() => {
+    if (activeObject && canvasInstance) {
+      const command = new Commands.RemoveObjectCommand(
+        canvasInstance,
+        activeObject,
+      );
+      executeCommand(command);
+    }
+  }, [
+    activeObject,
+    canvasInstance,
+    Commands.RemoveObjectCommand,
+    executeCommand,
+  ]);
+
+  const handleBringObjectForward = useCallback(() => {
+    if (activeObject && canvasInstance) {
+      canvasInstance.bringObjectForward(activeObject);
+      toast.info("Objek dimajukan selapis");
+      // Aksi layering sederhana tidak perlu command history kompleks,
+      // cukup simpan state akhir kanvas jika diperlukan.
+    }
+  }, [activeObject, canvasInstance]);
+
+  const handleSendObjectBackwards = useCallback(() => {
+    if (activeObject && canvasInstance) {
+      canvasInstance.sendObjectBackwards(activeObject);
+      toast.info("Objek dimundurkan selapis");
+    }
+  }, [activeObject, canvasInstance]);
+
+  const handleDuplicateObject = useCallback(async () => {
+    if (!canvasInstance || !activeObject) return;
+    try {
+      const cloned = await activeObject.clone([
+        "isQrcode",
+        "qrcodeData",
+        "qrcodeFill",
+      ]);
+      cloned.set({
+        left: (cloned.left ?? 0) + 15,
+        top: (cloned.top ?? 0) + 15,
+      });
+      const command = new Commands.AddObjectCommand(canvasInstance, cloned);
+      executeCommand(command);
+    } catch (error) {
+      console.error("Gagal menduplikasi objek:", error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Terjadi kesalahan tidak dikenal.";
+      toast.error(`Gagal menduplikasi objek: ${message}`);
+    }
+  }, [canvasInstance, activeObject, executeCommand, Commands.AddObjectCommand]);
+
+  const handleToggleLock = useCallback(() => {
+    if (!activeObject) return;
+    const isLocked = !activeObject.lockMovementX;
+    handlePropertyChange("lockMovementX", isLocked);
+    handlePropertyChange("lockMovementY", isLocked);
+    handlePropertyChange("lockRotation", isLocked);
+    handlePropertyChange("lockScalingX", isLocked);
+    handlePropertyChange("lockScalingY", isLocked);
+    activeObject.set("hasControls", !isLocked);
+    canvasInstance?.renderAll();
+  }, [activeObject, handlePropertyChange, canvasInstance]);
 
   return {
+    handleAddText,
+    handleAddRectangle,
+    handleAddCircle,
+    handleAddQrcode,
     handlePropertyChange,
-    handleQrcodeDataChange,
-    handleTextAlignChange,
-    handleToggleStyle,
-    handleFontSizeStep,
-    handleToggleLock,
     handleDeleteObject,
-    handleUndo,
-    handleRedo,
     handleBringObjectForward,
     handleSendObjectBackwards,
-    handleAddQrcode,
+    handleDuplicateObject,
+    handleQrcodeDataChange,
+    recordStateBeforeInteractiveChange,
+    handleInteractiveChange,
+    handleInteractiveChangeCommit,
+    handleToggleLock,
   };
 }

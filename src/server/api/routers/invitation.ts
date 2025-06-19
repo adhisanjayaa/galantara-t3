@@ -151,7 +151,9 @@ export const invitationRouter = createTRPCRouter({
                 select: {
                   name: true,
                   themeIdentifier: true,
-                  formSchema: true,
+                  // [FIX] Baris di bawah ini dihapus karena field 'formSchema'
+                  // tidak lagi ada di model 'Product'.
+                  // formSchema: true,
                 },
               },
             },

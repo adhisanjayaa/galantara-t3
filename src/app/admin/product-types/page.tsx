@@ -1,14 +1,15 @@
-// File: src/app/admin/product-types/page.tsx [NEW]
+// File: src/app/admin/product-types/page.tsx
+
 import { api } from "~/trpc/server";
 import { ProductTypeClient } from "./components/ProductTypeClient";
 
-export default async function AdminProductTypesPage() {
-  const productTypes = await api.admin.getProductTypesWithCount();
+export default async function ProductTypesPage() {
+  // Mengambil data awal di server
+  const productTypes = await api.admin.getAllProductTypes();
 
   return (
-    <div>
-      <h1 className="mb-6 text-2xl font-bold">Manajemen Tipe Produk</h1>
-      <ProductTypeClient initialProductTypes={productTypes} />
+    <div className="container mx-auto py-10">
+      <ProductTypeClient initialData={productTypes} />
     </div>
   );
 }

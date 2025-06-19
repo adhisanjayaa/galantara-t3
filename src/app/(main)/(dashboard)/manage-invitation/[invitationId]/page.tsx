@@ -1,28 +1,34 @@
-// File: src/app/(dashboard)/manage-invitation/[invitationId]/page.tsx
+// File: src/app/(main)/(dashboard)/manage-invitation/[invitationId]/page.tsx
 
 import { notFound } from "next/navigation";
 import { api } from "~/trpc/server";
 import { InvitationEditorForm } from "./components/InvitationEditorForm";
 
-// --- PERBAIKAN FINAL ---
-// Tipe 'params' didefinisikan sebagai sebuah Promise, sesuai dengan
-// standar Next.js versi baru untuk lolos dari validasi build.
+/**
+ * Halaman ini adalah Server Component yang bertanggung jawab untuk:
+ * 1. Mengambil 'invitationId' dari parameter URL.
+ * 2. Memanggil tRPC procedure di server untuk mengambil detail undangan.
+ * 3. Menangani kasus jika undangan tidak ditemukan (404).
+ * 4. Me-render komponen 'InvitationEditorForm' (sebuah Client Component)
+ * dan meneruskan data undangan sebagai prop.
+ */
 export default async function ManageInvitationPage({
   params,
 }: {
+  // Tipe 'params' sebagai Promise sesuai standar Next.js terbaru
   params: Promise<{ invitationId: string }>;
 }) {
-  // "Tunggu" (await) promise 'params' untuk mendapatkan objek yang sebenarnya,
-  // lalu destructure untuk mengambil 'invitationId'.
+  // Menunggu (await) promise 'params' untuk mendapatkan objek parameter
   const { invitationId } = await params;
 
-  // Gunakan invitationId untuk mengambil data.
+  // Mengambil data detail undangan dari server
   const invitation = await api.invitation.getInvitationDetails({
     invitationId,
   });
 
+  // Jika undangan tidak ada di database atau bukan milik user, tampilkan halaman 404
   if (!invitation) {
-    return notFound();
+    notFound();
   }
 
   return (
@@ -36,6 +42,11 @@ export default async function ManageInvitationPage({
           .
         </p>
       </div>
+
+      {/* Me-render form editor (Client Component) dan memberikan seluruh objek
+        'invitation' sebagai prop. Semua logika form yang kompleks akan
+        ditangani di dalam InvitationEditorForm dan komponen-komponen anaknya.
+      */}
       <InvitationEditorForm invitation={invitation} />
     </div>
   );

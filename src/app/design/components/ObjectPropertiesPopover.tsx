@@ -1,3 +1,4 @@
+// File: src/app/design/components/ObjectPropertiesPopover.tsx
 "use client";
 
 import React, { useRef, useEffect } from "react";
@@ -19,6 +20,7 @@ import {
   AlignCenter,
   AlignRight,
   Copy,
+  Pilcrow,
 } from "lucide-react";
 import { Toggle } from "~/components/ui/toggle";
 import { Separator } from "~/components/ui/separator";
@@ -37,9 +39,18 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "~/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "~/components/ui/dropdown-menu";
+import { Slider } from "~/components/ui/slider";
+import { Label } from "~/components/ui/label";
 
 type TextAlign = "left" | "center" | "right";
 
+// Interface props yang sudah diperbarui dengan handler generik
 interface ObjectPropertiesPopoverProps {
   objectType: string | null;
   styles: {
@@ -53,19 +64,23 @@ interface ObjectPropertiesPopoverProps {
     cornerRadius: number;
     qrcodeData?: string;
     textAlign?: TextAlign;
+    charSpacing: number;
+    lineHeight: number;
   };
-  isAtFront: boolean; // [BARU] Prop untuk status lapisan depan
-  isAtBack: boolean; // [BARU] Prop untuk status lapisan belakang
-  onFillChange: (newColor: string) => void;
-  onFillChangeCommit?: () => void;
-  onToggleBold: () => void;
-  onToggleItalic: () => void;
-  onToggleUnderline: () => void;
-  onFontSizeChange: (newSize: number) => void;
-  onIncrementFontSize: () => void;
-  onDecrementFontSize: () => void;
-  onFontFamilyChange: (newFont: string) => void;
-  onCornerRadiusChange: (radius: number) => void;
+  isAtFront: boolean;
+  isAtBack: boolean;
+  fontFamilies: string[];
+  areFontsLoading: boolean;
+
+  // Handler untuk perubahan interaktif (slider, color picker)
+  onInteractiveChangeStart: () => void;
+  onInteractiveChange: (prop: string, value: string | number) => void;
+  onInteractiveChangeCommit: () => void;
+
+  // Handler untuk perubahan properti sekali klik
+  onPropertyChange: (prop: string, value: unknown) => void;
+
+  // Handler aksi umum
   onToggleLock: () => void;
   onDeleteObject: () => void;
   onChangeImage: () => void;
@@ -74,24 +89,19 @@ interface ObjectPropertiesPopoverProps {
   onSendBackward: () => void;
   onDuplicateObject: () => void;
   onQrcodeDataChange?: (newData: string) => void;
-  onTextAlignChange?: (align: TextAlign) => void;
 }
 
 export function ObjectPropertiesPopover({
   objectType,
   styles,
-  isAtFront, // Ambil prop baru
-  isAtBack, // Ambil prop baru
-  onFillChange,
-  onFillChangeCommit,
-  onToggleBold,
-  onToggleItalic,
-  onToggleUnderline,
-  onFontSizeChange,
-  onIncrementFontSize,
-  onDecrementFontSize,
-  onFontFamilyChange,
-  onCornerRadiusChange,
+  isAtFront,
+  isAtBack,
+  fontFamilies,
+  areFontsLoading,
+  onInteractiveChangeStart,
+  onInteractiveChange,
+  onInteractiveChangeCommit,
+  onPropertyChange,
   onToggleLock,
   onDeleteObject,
   onChangeImage,
@@ -100,57 +110,46 @@ export function ObjectPropertiesPopover({
   onSendBackward,
   onDuplicateObject,
   onQrcodeDataChange,
-  onTextAlignChange,
 }: ObjectPropertiesPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
 
+  // Efek untuk menyimpan perubahan (commit) saat pengguna mengklik di luar popover
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (
         popoverRef.current &&
         !popoverRef.current.contains(event.target as Node)
       ) {
-        onFillChangeCommit?.();
+        onInteractiveChangeCommit();
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [onFillChangeCommit]);
+  }, [onInteractiveChangeCommit]);
 
-  const FONT_FAMILIES = [
-    "Arial",
-    "Helvetica",
-    "Georgia",
-    "Times New Roman",
-    "Verdana",
-  ];
   const isTextObject = objectType === "i-text" || objectType === "textbox";
+  const isImageObject = objectType === "image";
   const isQrcodeObject = objectType === "qrcode";
+  // Variabel `isShapeObject` dihapus karena tidak digunakan untuk menghindari warning ESLint
 
   const handleAlignClick = () => {
     const current = styles.textAlign ?? "left";
-    let next: TextAlign = "center";
-    if (current === "left") {
-      next = "center";
-    } else if (current === "center") {
-      next = "right";
-    } else {
-      next = "left";
-    }
-    onTextAlignChange?.(next);
+    const next: TextAlign =
+      current === "left" ? "center" : current === "center" ? "right" : "left";
+    onPropertyChange("textAlign", next);
   };
 
   return (
     <TooltipProvider>
       <div
         ref={popoverRef}
-        className="no-scrollbar w-full max-w-[calc(100vw-2rem)] overflow-x-auto sm:max-w-none sm:overflow-x-visible"
+        className="bg-background no-scrollbar max-w-[95vw] overflow-x-auto rounded-lg border shadow-lg"
       >
-        <div className="flex w-fit items-center gap-3 p-1">
+        <div className="flex w-fit items-center gap-2 p-2">
           {/* Properti Warna & Bentuk */}
-          {objectType !== "image" && (
+          {!isImageObject && (
             <div className="flex items-center gap-2">
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -158,7 +157,12 @@ export function ObjectPropertiesPopover({
                     <input
                       type="color"
                       value={styles.fill}
-                      onChange={(e) => onFillChange(e.target.value)}
+                      onFocus={onInteractiveChangeStart}
+                      onInput={(e) =>
+                        onInteractiveChange("fill", e.currentTarget.value)
+                      }
+                      onChange={onInteractiveChangeCommit}
+                      onBlur={onInteractiveChangeCommit}
                       className="absolute -top-1 -left-1 h-10 w-10 cursor-pointer"
                     />
                   </div>
@@ -174,7 +178,7 @@ export function ObjectPropertiesPopover({
                       type="number"
                       value={styles.cornerRadius}
                       onChange={(e) =>
-                        onCornerRadiusChange(Number(e.target.value))
+                        onPropertyChange("cornerRadius", Number(e.target.value))
                       }
                       className="h-8 w-14 rounded-md border text-center"
                       min={0}
@@ -195,14 +199,21 @@ export function ObjectPropertiesPopover({
               <div className="flex items-center gap-2">
                 <Select
                   value={styles.fontFamily}
-                  onValueChange={onFontFamilyChange}
+                  onValueChange={(font) => onPropertyChange("fontFamily", font)}
+                  disabled={areFontsLoading}
                 >
                   <SelectTrigger className="h-8 w-[130px] rounded-md border shadow-sm">
-                    <SelectValue placeholder="Font" />
+                    <SelectValue
+                      placeholder={areFontsLoading ? "Memuat..." : "Font"}
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    {FONT_FAMILIES.map((font) => (
-                      <SelectItem key={font} value={font}>
+                    {fontFamilies.map((font) => (
+                      <SelectItem
+                        key={font}
+                        value={font}
+                        style={{ fontFamily: font }}
+                      >
                         {font}
                       </SelectItem>
                     ))}
@@ -213,14 +224,18 @@ export function ObjectPropertiesPopover({
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 rounded-r-none"
-                    onClick={onDecrementFontSize}
+                    onClick={() =>
+                      onPropertyChange("fontSize", styles.fontSize - 1)
+                    }
                   >
                     <Minus className="h-4 w-4" />
                   </Button>
                   <Input
                     type="number"
                     value={styles.fontSize}
-                    onChange={(e) => onFontSizeChange(Number(e.target.value))}
+                    onChange={(e) =>
+                      onPropertyChange("fontSize", Number(e.target.value))
+                    }
                     className="h-8 w-12 border-x-0 bg-transparent text-center focus-visible:ring-0"
                     min={1}
                   />
@@ -228,7 +243,9 @@ export function ObjectPropertiesPopover({
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 rounded-l-none"
-                    onClick={onIncrementFontSize}
+                    onClick={() =>
+                      onPropertyChange("fontSize", styles.fontSize + 1)
+                    }
                   >
                     <Plus className="h-4 w-4" />
                   </Button>
@@ -237,21 +254,33 @@ export function ObjectPropertiesPopover({
                   <Toggle
                     size="sm"
                     pressed={styles.isBold}
-                    onPressedChange={onToggleBold}
+                    onPressedChange={() =>
+                      onPropertyChange(
+                        "fontWeight",
+                        styles.isBold ? "normal" : "bold",
+                      )
+                    }
                   >
                     <Bold className="h-4 w-4" />
                   </Toggle>
                   <Toggle
                     size="sm"
                     pressed={styles.isItalic}
-                    onPressedChange={onToggleItalic}
+                    onPressedChange={() =>
+                      onPropertyChange(
+                        "fontStyle",
+                        styles.isItalic ? "normal" : "italic",
+                      )
+                    }
                   >
                     <Italic className="h-4 w-4" />
                   </Toggle>
                   <Toggle
                     size="sm"
                     pressed={styles.isUnderline}
-                    onPressedChange={onToggleUnderline}
+                    onPressedChange={() =>
+                      onPropertyChange("underline", !styles.isUnderline)
+                    }
                   >
                     <Underline className="h-4 w-4" />
                   </Toggle>
@@ -279,12 +308,98 @@ export function ObjectPropertiesPopover({
                     </TooltipContent>
                   </Tooltip>
                 </div>
+                {/* Kontrol Spasi Teks */}
+                <Separator orientation="vertical" className="h-6" />
+                <DropdownMenu>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Pilcrow className="h-4 w-4" />
+                          <span className="sr-only">Pengaturan Spasi Teks</span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Spasi Teks</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent
+                    className="w-56 p-2"
+                    align="start"
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerUp={onInteractiveChangeCommit}
+                  >
+                    <div className="grid gap-2">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="letter-spacing" className="text-xs">
+                          Jarak Huruf
+                        </Label>
+                        <Input
+                          id="letter-spacing"
+                          type="number"
+                          value={styles.charSpacing}
+                          onChange={(e) =>
+                            onPropertyChange(
+                              "charSpacing",
+                              Number(e.target.value),
+                            )
+                          }
+                          className="h-7 w-16 text-xs"
+                        />
+                      </div>
+                      <Slider
+                        value={[styles.charSpacing]}
+                        onValueChange={([val]) =>
+                          onInteractiveChange("charSpacing", val!)
+                        }
+                        onPointerDown={onInteractiveChangeStart}
+                        onPointerUp={onInteractiveChangeCommit}
+                        min={-100}
+                        max={500}
+                        step={5}
+                      />
+                    </div>
+                    <DropdownMenuSeparator />
+                    <div className="grid gap-2">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="line-height" className="text-xs">
+                          Tinggi Baris
+                        </Label>
+                        <Input
+                          id="line-height"
+                          type="number"
+                          value={styles.lineHeight.toFixed(1)}
+                          onChange={(e) =>
+                            onPropertyChange(
+                              "lineHeight",
+                              Number(e.target.value),
+                            )
+                          }
+                          className="h-7 w-16 text-xs"
+                          step={0.1}
+                        />
+                      </div>
+                      <Slider
+                        value={[styles.lineHeight]}
+                        onValueChange={([val]) =>
+                          onInteractiveChange("lineHeight", val!)
+                        }
+                        onPointerDown={onInteractiveChangeStart}
+                        onPointerUp={onInteractiveChangeCommit}
+                        min={0.5}
+                        max={3}
+                        step={0.1}
+                      />
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </>
           )}
 
           {/* Properti Gambar */}
-          {objectType === "image" && (
+          {isImageObject && (
             <div className="flex items-center rounded-md border p-0.5 shadow-sm">
               <Button variant="ghost" size="sm" onClick={onChangeImage}>
                 <ImageIcon className="mr-2 h-4 w-4" /> Ganti
@@ -346,12 +461,7 @@ export function ObjectPropertiesPopover({
                 </TooltipContent>
               </Tooltip>
             </div>
-
-            {/* --- KODE LAMA TOMBOL DUPLIKAT DIHAPUS DARI SINI --- */}
-
-            {/* --- DIV UNTUK MENGGABUNGKAN TOMBOL AKSI --- */}
             <div className="flex items-center rounded-md border p-0.5 shadow-sm">
-              {/* --- PINDAHKAN TOMBOL DUPLIKAT KE SINI --- */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -367,8 +477,6 @@ export function ObjectPropertiesPopover({
                   <p>Duplikat Objek</p>
                 </TooltipContent>
               </Tooltip>
-
-              {/* Tombol Lock */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Toggle
@@ -387,8 +495,6 @@ export function ObjectPropertiesPopover({
                   <p>{styles.isLocked ? "Buka Kunci" : "Kunci Objek"}</p>
                 </TooltipContent>
               </Tooltip>
-
-              {/* Tombol Delete */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button

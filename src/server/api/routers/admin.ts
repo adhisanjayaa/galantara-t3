@@ -2,6 +2,7 @@ import { z } from "zod";
 import { createTRPCRouter, adminProcedure } from "~/server/api/trpc";
 import { ProductCategory, type Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
+import { supabase } from "~/server/lib/supabase";
 
 export const adminRouter = createTRPCRouter({
   /**
@@ -23,10 +24,28 @@ export const adminRouter = createTRPCRouter({
   /**
    * Mengambil semua produk untuk manajemen.
    */
+
   getAllProducts: adminProcedure.query(({ ctx }) => {
+    // <-- PASTIKAN INI ADA
     return ctx.db.product.findMany({
       orderBy: { name: "asc" },
       include: { productType: true },
+    });
+  }),
+
+  getAllProductTypes: adminProcedure.query(({ ctx }) => {
+    // [FIX DI SINI] Tambahkan blok 'select' untuk secara eksplisit
+    // meminta semua field yang dibutuhkan. Ini akan memaksa tRPC untuk
+    // membuat tipe data yang benar untuk frontend.
+    return ctx.db.productType.findMany({
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        schemaIdentifier: true, // <-- Ini yang paling penting
+        createdAt: true,
+        updatedAt: true,
+      },
     });
   }),
 
@@ -60,27 +79,55 @@ export const adminRouter = createTRPCRouter({
    */
   createProductType: adminProcedure
     .input(
-      z.object({ name: z.string().min(3, "Nama tipe minimal 3 karakter.") }),
+      z.object({
+        name: z.string().min(1, "Nama tipe produk wajib diisi."),
+        schemaIdentifier: z.string().optional(),
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       const existingType = await ctx.db.productType.findFirst({
-        where: {
-          name: { equals: input.name, mode: "insensitive" },
-        },
+        where: { name: { equals: input.name, mode: "insensitive" } },
       });
-
       if (existingType) {
         throw new TRPCError({
           code: "CONFLICT",
-          message: "Tipe produk dengan nama tersebut sudah ada.",
+          message: `Tipe produk dengan nama "${input.name}" sudah ada.`,
+        });
+      }
+      return ctx.db.productType.create({ data: input });
+    }),
+
+  updateProductType: adminProcedure
+    .input(
+      z.object({
+        id: z.string().cuid(),
+        name: z.string().min(1, "Nama tipe produk wajib diisi."),
+        schemaIdentifier: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      return ctx.db.productType.update({
+        where: { id },
+        data,
+      });
+    }),
+
+  deleteProductType: adminProcedure
+    .input(z.object({ id: z.string().cuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const productUsingType = await ctx.db.product.findFirst({
+        where: { productTypeId: input.id },
+      });
+
+      if (productUsingType) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Tipe ini tidak bisa dihapus karena sedang digunakan oleh produk "${productUsingType.name}".`,
         });
       }
 
-      return ctx.db.productType.create({
-        data: {
-          name: input.name,
-        },
-      });
+      return ctx.db.productType.delete({ where: { id: input.id } });
     }),
 
   /**
@@ -270,5 +317,81 @@ export const adminRouter = createTRPCRouter({
       }
 
       return ctx.db.designTemplate.delete({ where: { id: input.id } });
+    }),
+
+  /**
+   * Mengambil semua font kustom yang telah diunggah.
+   */
+  getCustomFonts: adminProcedure.query(({ ctx }) => {
+    return ctx.db.customFont.findMany({
+      orderBy: { name: "asc" },
+    });
+  }),
+
+  /**
+   * Menambahkan metadata font baru ke database.
+   */
+  addCustomFont: adminProcedure
+    .input(
+      z.object({
+        name: z.string().min(1, "Nama font wajib diisi"),
+        weight: z.string().min(1, "Berat font wajib diisi"),
+        style: z.string().min(1, "Gaya font wajib diisi"),
+        url: z.string().url("URL tidak valid"),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const existingFont = await ctx.db.customFont.findFirst({
+        where: { name: input.name, weight: input.weight, style: input.style },
+      });
+      if (existingFont) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Varian font <span class="math-inline">\{input\.name\} \(</span>{input.weight} ${input.style}) sudah ada.`,
+        });
+      }
+      return ctx.db.customFont.create({ data: input });
+    }),
+
+  /**
+   * Menghapus font dari database dan Supabase Storage.
+   */
+  deleteCustomFont: adminProcedure
+    .input(z.object({ id: z.string().cuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const font = await ctx.db.customFont.findUnique({
+        where: { id: input.id },
+      });
+      if (!font) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Font tidak ditemukan.",
+        });
+      }
+
+      // Hapus file dari Supabase Storage
+      try {
+        // Ambil path file dari URL lengkap
+        const filePath = new URL(font.url).pathname.split(
+          "/public/design-assets/",
+        )[1];
+        if (filePath) {
+          const { error } = await supabase.storage
+            .from("design-assets")
+            .remove([filePath]);
+          if (error) throw error;
+        }
+      } catch (e) {
+        // 2. Ganti `toast.warning` dengan `console.error` yang aman di sisi server
+        console.error(
+          "Gagal menghapus file font dari storage, data DB akan tetap dihapus:",
+          e,
+        );
+        // Di sini kita sengaja tidak melempar error agar proses penghapusan dari DB tetap berjalan.
+        // Klien tidak akan tahu tentang kegagalan ini, tapi akan tercatat di log server.
+      }
+
+      // Hapus record dari database
+      return ctx.db.customFont.delete({ where: { id: input.id } });
     }),
 });

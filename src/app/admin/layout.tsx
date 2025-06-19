@@ -52,6 +52,12 @@ export default function AdminLayout({
             >
               Template Desain
             </Link>
+            <Link
+              href="/admin/fonts"
+              className="text-muted-foreground hover:text-primary flex items-center gap-3 rounded-lg px-3 py-2 transition-all"
+            >
+              Font Kustom
+            </Link>
           </nav>
         </div>
       </aside>
