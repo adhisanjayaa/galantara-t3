@@ -2,7 +2,7 @@
 "use client";
 
 import { useParams, useSearchParams } from "next/navigation";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react"; // <-- Impor useCallback
 import { api } from "~/trpc/react";
 import { Loader2, Check, X } from "lucide-react";
 
@@ -42,7 +42,6 @@ export default function DesignEditorPage() {
   const isNewDesign = designId === "new";
   const templateId = searchParams.get("templateId");
 
-  // --- State Inti Komponen ---
   const [canvasInstance, setCanvasInstance] = useState<Canvas | null>(null);
   const [activeObject, setActiveObject] = useState<FabricObject | null>(null);
   const [artboardWidth, setArtboardWidth] = useState(1200);
@@ -50,10 +49,12 @@ export default function DesignEditorPage() {
   const [canBringForward, setCanBringForward] = useState(false);
   const [canSendBackward, setCanSendBackward] = useState(false);
 
-  // --- Refs ---
+  // --- PERBAIKAN 1: Tambahkan state versioning ---
+  const [objectVersion, setObjectVersion] = useState(0);
+  const forceUpdate = useCallback(() => setObjectVersion((v) => v + 1), []);
+
   const mainWrapperRef = useRef<HTMLElement | null>(null);
 
-  // --- tRPC Hooks untuk Data Fetching ---
   const { data: existingDesign, isLoading: isLoadingDesign } =
     api.design.getDesignById.useQuery(
       { id: designId },
@@ -68,7 +69,6 @@ export default function DesignEditorPage() {
 
   const isLoading = isLoadingDesign || isLoadingTemplate;
 
-  // --- Inisialisasi Semua Custom Hooks ---
   const {
     undo,
     redo,
@@ -80,7 +80,6 @@ export default function DesignEditorPage() {
     createModificationCommand,
     commands,
   } = useCanvasHistory(canvasInstance);
-
   const {
     pages,
     setPages,
@@ -89,13 +88,11 @@ export default function DesignEditorPage() {
     getPagesForSave,
     loadPageData,
   } = usePageManager({ canvasInstance, clearHistory });
-
   const { displaySize, handleZoom } = useViewportHandler({
     artboardWidth,
     artboardHeight,
     mainWrapperRef,
   });
-
   const {
     isUploading,
     isCropping,
@@ -112,6 +109,7 @@ export default function DesignEditorPage() {
     Commands: commands,
   });
 
+  // --- PERBAIKAN 2: Teruskan `forceUpdate` ke hook ---
   const {
     handleAddText,
     handleAddRectangle,
@@ -132,6 +130,7 @@ export default function DesignEditorPage() {
     activeObject,
     executeCommand,
     Commands: commands,
+    forceUpdate, // <-- Teruskan di sini
   });
 
   useCanvasSetup({
@@ -143,15 +142,11 @@ export default function DesignEditorPage() {
     recordObjectStateBeforeModify,
     createModificationCommand,
   });
-
   const { availableFonts, areFontsLoading } = useFontLoader();
 
-  // --- Effects ---
-
-  // Efek untuk memuat data awal ke kanvas
+  // Efek untuk memuat data awal (tidak ada perubahan di sini)
   useEffect(() => {
     if (!canvasInstance || isLoading) return;
-
     if (!isNewDesign && existingDesign) {
       const designTemplate = existingDesign.product.designTemplate;
       setArtboardWidth(designTemplate?.artboardWidth ?? 1200);
@@ -185,7 +180,7 @@ export default function DesignEditorPage() {
     setPages,
   ]);
 
-  // Efek untuk mengelola status tombol layering
+  // Efek untuk tombol layering (tidak ada perubahan di sini)
   useEffect(() => {
     if (!canvasInstance || !activeObject) {
       setCanBringForward(false);
@@ -196,12 +191,11 @@ export default function DesignEditorPage() {
       .getObjects()
       .filter((obj) => !obj.excludeFromExport);
     const activeObjectIndex = designObjects.indexOf(activeObject);
-
     setCanBringForward(activeObjectIndex < designObjects.length - 1);
     setCanSendBackward(activeObjectIndex > 0);
-  }, [activeObject, canvasInstance, canUndo, canRedo]);
+  }, [activeObject, canvasInstance, canUndo, canRedo, objectVersion]); // <-- Tambahkan objectVersion di sini juga jika perlu
 
-  // Memo untuk mengambil properti objek aktif
+  // --- PERBAIKAN 3: Tambahkan `objectVersion` ke dependensi `useMemo` ---
   const activeObjectProps = useMemo(() => {
     if (!activeObject) return null;
     const isText = activeObject instanceof IText;
@@ -210,7 +204,6 @@ export default function DesignEditorPage() {
     let fill =
       typeof activeObject.fill === "string" ? activeObject.fill : "#000000";
     if (isQrcode) fill = (activeObject as IQrCodeImage).qrcodeFill ?? "#000000";
-
     return {
       fill,
       isLocked: !!activeObject.lockMovementX,
@@ -230,8 +223,10 @@ export default function DesignEditorPage() {
       charSpacing: isText ? ((activeObject as IText).charSpacing ?? 0) : 0,
       lineHeight: isText ? ((activeObject as IText).lineHeight ?? 1.2) : 1.2,
     };
-  }, [activeObject]);
+  }, [activeObject, objectVersion]); // <-- Tambahkan objectVersion
 
+  // Sisa dari komponen (return statement, dll.) tidak perlu diubah.
+  // ...
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -294,7 +289,6 @@ export default function DesignEditorPage() {
             pages={pages}
             currentPageIndex={currentPageIndex}
             onPageChange={handlePageChange}
-            // onAddPage & onRenamePage sengaja tidak diberikan untuk membuat page manager read-only
           />
         )}
       </div>

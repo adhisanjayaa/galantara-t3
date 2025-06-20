@@ -152,7 +152,7 @@ export default function EditorToolbar({
 
   return (
     <TooltipProvider>
-      <div className="bg-background flex items-center gap-1 rounded-lg border p-1 shadow-md">
+      <div className="flex items-center gap-1 p-1">
         {/* Add Object Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -194,7 +194,7 @@ export default function EditorToolbar({
         {/* Pages Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-8 w-36 justify-start">
+            <Button variant="ghost" className="h-8 w-28 justify-start">
               <FileIcon className="mr-2 h-4 w-4 flex-shrink-0" />
               <span className="truncate">
                 {pages[currentPageIndex]?.name ??
@@ -287,7 +287,7 @@ export default function EditorToolbar({
             <p>Perbesar (Ctrl+Scroll)</p>
           </TooltipContent>
         </Tooltip>
-        <span className="text-muted-foreground w-14 text-center text-sm font-medium">
+        <span className="text-muted-foreground hidden w-14 text-center text-sm font-medium sm:inline">
           {Math.round(scale * 100)}%
         </span>
       </div>

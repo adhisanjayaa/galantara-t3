@@ -2,11 +2,11 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { api } from "~/trpc/react";
 import { Loader2, Check, X } from "lucide-react";
 
-// Impor tipe dan nilai dari 'fabric' secara terpisah sesuai aturan linting
+// Impor tipe dan nilai dari 'fabric' secara terpisah
 import type { Canvas, FabricObject, FabricImage } from "fabric";
 import { IText, Rect } from "fabric";
 
@@ -26,7 +26,6 @@ import EditorToolbar from "~/app/design/components/EditorToolbar";
 import { ObjectPropertiesPopover } from "~/app/design/components/ObjectPropertiesPopover";
 import { Button } from "~/components/ui/button";
 
-// Definisikan tipe spesifik untuk QR Code Image
 interface IQrCodeImage extends FabricImage {
   isQrcode: true;
   qrcodeData: string;
@@ -38,7 +37,7 @@ export default function AdminTemplateEditorPage() {
   const templateId = params.templateId as string;
   const isNewTemplate = templateId === "new";
 
-  // --- State Inti Komponen ---
+  // State Inti Komponen
   const [templateName, setTemplateName] = useState("Template Baru");
   const [artboardWidth, setArtboardWidth] = useState(1200);
   const [artboardHeight, setArtboardHeight] = useState(800);
@@ -46,18 +45,20 @@ export default function AdminTemplateEditorPage() {
   const [activeObject, setActiveObject] = useState<FabricObject | null>(null);
   const [canBringForward, setCanBringForward] = useState(false);
   const [canSendBackward, setCanSendBackward] = useState(false);
+  const [objectVersion, setObjectVersion] = useState(0);
+  const forceUpdate = useCallback(() => setObjectVersion((v) => v + 1), []);
 
-  // --- Refs ---
+  // Refs
   const mainWrapperRef = useRef<HTMLElement | null>(null);
 
-  // --- tRPC Hooks ---
+  // tRPC Hooks
   const { data: existingTemplate, isLoading } =
     api.admin.getDesignTemplateById.useQuery(
       { id: templateId },
       { enabled: !isNewTemplate },
     );
 
-  // --- Inisialisasi Semua Custom Hooks ---
+  // Inisialisasi Custom Hooks
   const {
     undo,
     redo,
@@ -103,6 +104,7 @@ export default function AdminTemplateEditorPage() {
     Commands: commands,
   });
 
+  // --- PERBAIKAN DI SINI: Samakan nama fungsinya ---
   const {
     handleAddText,
     handleAddRectangle,
@@ -110,8 +112,8 @@ export default function AdminTemplateEditorPage() {
     handleAddQrcode,
     handlePropertyChange,
     handleDeleteObject,
-    handleBringObjectForward,
-    handleSendObjectBackwards,
+    handleBringObjectForward, // <-- Nama yang benar
+    handleSendObjectBackwards, // <-- Nama yang benar
     handleDuplicateObject,
     handleQrcodeDataChange,
     recordStateBeforeInteractiveChange,
@@ -123,6 +125,7 @@ export default function AdminTemplateEditorPage() {
     activeObject,
     executeCommand,
     Commands: commands,
+    forceUpdate,
   });
 
   useCanvasSetup({
@@ -137,21 +140,16 @@ export default function AdminTemplateEditorPage() {
 
   const { availableFonts, areFontsLoading } = useFontLoader();
 
-  // --- Effects ---
-
-  // Efek untuk memuat data awal ke kanvas
+  // Effects
   useEffect(() => {
     if (!canvasInstance) return;
-    if (!isNewTemplate && isLoading) return; // Tunggu jika sedang loading data lama
+    if (!isNewTemplate && isLoading) return;
 
     if (!isNewTemplate && existingTemplate) {
-      // Mode Edit: Muat data dari template yang ada
       setTemplateName(existingTemplate.name);
       setArtboardWidth(existingTemplate.artboardWidth ?? 1200);
       setArtboardHeight(existingTemplate.artboardHeight ?? 800);
-
       const dataToLoad = existingTemplate.designData as unknown;
-
       if (Array.isArray(dataToLoad) && dataToLoad.length > 0) {
         setPages(dataToLoad as PageState[]);
         loadPageData(dataToLoad[0]?.data ?? {});
@@ -164,7 +162,6 @@ export default function AdminTemplateEditorPage() {
         loadPageData(singlePage.data);
       }
     } else if (isNewTemplate) {
-      // Mode Buat Baru: Siapkan halaman kosong pertama
       const firstPage = { name: "Page 1", data: {} };
       setPages([firstPage]);
       loadPageData(firstPage.data);
@@ -178,7 +175,6 @@ export default function AdminTemplateEditorPage() {
     setPages,
   ]);
 
-  // Efek untuk mengunci scroll body saat editor aktif
   useEffect(() => {
     document.body.style.overflow = "hidden";
     return () => {
@@ -186,7 +182,6 @@ export default function AdminTemplateEditorPage() {
     };
   }, []);
 
-  // Efek untuk mengelola status tombol layering
   useEffect(() => {
     if (!canvasInstance || !activeObject) {
       setCanBringForward(false);
@@ -197,12 +192,10 @@ export default function AdminTemplateEditorPage() {
       .getObjects()
       .filter((obj) => !obj.excludeFromExport);
     const activeObjectIndex = designObjects.indexOf(activeObject);
-
     setCanBringForward(activeObjectIndex < designObjects.length - 1);
     setCanSendBackward(activeObjectIndex > 0);
-  }, [activeObject, canvasInstance, canUndo, canRedo]);
+  }, [activeObject, canvasInstance, objectVersion]);
 
-  // Memo untuk mengambil properti objek aktif secara efisien
   const activeObjectProps = useMemo(() => {
     if (!activeObject) return null;
     const isText = activeObject instanceof IText;
@@ -211,7 +204,6 @@ export default function AdminTemplateEditorPage() {
     let fill =
       typeof activeObject.fill === "string" ? activeObject.fill : "#000000";
     if (isQrcode) fill = (activeObject as IQrCodeImage).qrcodeFill ?? "#000000";
-
     return {
       fill,
       isLocked: !!activeObject.lockMovementX,
@@ -231,7 +223,7 @@ export default function AdminTemplateEditorPage() {
       charSpacing: isText ? ((activeObject as IText).charSpacing ?? 0) : 0,
       lineHeight: isText ? ((activeObject as IText).lineHeight ?? 1.2) : 1.2,
     };
-  }, [activeObject]);
+  }, [activeObject, objectVersion]);
 
   if (isLoading && !isNewTemplate) {
     return (
@@ -258,7 +250,6 @@ export default function AdminTemplateEditorPage() {
         canRedo={canRedo}
         getPagesForSave={getPagesForSave}
       />
-
       <div className="bg-background flex h-14 items-center justify-center border-b px-4">
         {isCropping ? (
           <div className="flex w-full items-center justify-center gap-2">
@@ -288,7 +279,6 @@ export default function AdminTemplateEditorPage() {
           />
         )}
       </div>
-
       <main
         className="relative h-[calc(100dvh-7.5rem)] overflow-hidden bg-gray-200 p-4"
         ref={mainWrapperRef}
@@ -335,8 +325,8 @@ export default function AdminTemplateEditorPage() {
               onDeleteObject={handleDeleteObject}
               onChangeImage={triggerImageUpload}
               onCropImage={enterCropMode}
-              onBringForward={handleBringObjectForward}
-              onSendBackward={handleSendObjectBackwards}
+              onBringForward={handleBringObjectForward} // <-- Nama yang benar
+              onSendBackward={handleSendObjectBackwards} // <-- Nama yang benar
               onDuplicateObject={() => {
                 void handleDuplicateObject();
               }}
@@ -347,7 +337,6 @@ export default function AdminTemplateEditorPage() {
           )}
         </div>
       </main>
-
       <input
         type="file"
         accept="image/*"

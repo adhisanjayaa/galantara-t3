@@ -39,6 +39,7 @@ interface UseCanvasHandlersProps {
   activeObject: FabricObject | null;
   executeCommand: (command: ICommand) => void;
   Commands: ICommands;
+  forceUpdate: () => void; // <-- TAMBAHKAN INI
 }
 
 export function useCanvasHandlers({
@@ -46,16 +47,15 @@ export function useCanvasHandlers({
   activeObject,
   executeCommand,
   Commands,
+  forceUpdate, // <-- TAMBAHKAN INI
 }: UseCanvasHandlersProps) {
-  // --- Refs untuk menangani perubahan interaktif ---
   const isChangingInteractively = useRef(false);
   const objectStateBeforeInteractiveChange = useRef<Record<
     string,
     unknown
   > | null>(null);
 
-  // --- Handlers untuk Menambah Objek ---
-
+  // Fungsi-fungsi untuk menambah objek tetap sama
   const handleAddText = useCallback(() => {
     if (!canvasInstance) return;
     const text = new Textbox("Teks Anda", {
@@ -92,7 +92,7 @@ export function useCanvasHandlers({
       const dataUrl = await QRCode.toDataURL(qrcodeValue, {
         width: 200,
         margin: 1,
-        color: { dark: "#000000", light: "#0000" }, // Latar belakang transparan
+        color: { dark: "#000000", light: "#0000" },
       });
       const img = await FabricImage.fromURL(dataUrl);
       Object.assign(img, {
@@ -105,13 +105,11 @@ export function useCanvasHandlers({
       executeCommand(command);
     } catch (err) {
       console.error("Gagal membuat QR code:", err);
-      const message =
-        err instanceof Error ? err.message : "Terjadi kesalahan tidak dikenal.";
-      toast.error(`Gagal membuat QR code: ${message}`);
+      toast.error(
+        `Gagal membuat QR code: ${err instanceof Error ? err.message : "Terjadi kesalahan"}`,
+      );
     }
   }, [canvasInstance, executeCommand, Commands.AddObjectCommand]);
-
-  // --- Handlers untuk Mengubah Properti Objek ---
 
   const updateQrcode = useCallback(
     async (
@@ -138,9 +136,6 @@ export function useCanvasHandlers({
     [canvasInstance],
   );
 
-  /**
-   * Untuk perubahan properti yang terjadi sekali klik (misal: bold, ganti font).
-   */
   const handlePropertyChange = useCallback(
     (prop: string, value: unknown) => {
       if (!activeObject || !canvasInstance) return;
@@ -150,6 +145,7 @@ export function useCanvasHandlers({
       } else {
         activeObject.set(prop as keyof FabricObject, value);
       }
+      canvasInstance.renderAll();
       const finalState = activeObject.toObject();
       const command = new Commands.UpdateObjectCommand(
         canvasInstance,
@@ -158,37 +154,30 @@ export function useCanvasHandlers({
         finalState,
       );
       executeCommand(command);
+      forceUpdate(); // <-- PANGGIL FUNGSI UPDATE DI SINI
     },
     [
       activeObject,
       canvasInstance,
       Commands.UpdateObjectCommand,
       executeCommand,
+      forceUpdate,
     ],
   );
 
-  /**
-   * Merekam state objek sebelum interaksi (untuk slider, color picker).
-   * Dipanggil pada onFocus atau onPointerDown.
-   */
   const recordStateBeforeInteractiveChange = useCallback(() => {
     if (activeObject) {
-      const relevantProps = [
+      const props = [
         "fill",
         "charSpacing",
         "lineHeight",
         "isQrcode",
         "qrcodeFill",
       ];
-      objectStateBeforeInteractiveChange.current =
-        activeObject.toObject(relevantProps);
+      objectStateBeforeInteractiveChange.current = activeObject.toObject(props);
     }
   }, [activeObject]);
 
-  /**
-   * Mengubah properti objek secara visual secara real-time tanpa menyimpan ke history.
-   * Dipanggil pada onInput atau onValueChange.
-   */
   const handleInteractiveChange = useCallback(
     (prop: string, value: string | number) => {
       if (!activeObject || !canvasInstance) return;
@@ -205,10 +194,6 @@ export function useCanvasHandlers({
     [activeObject, canvasInstance, updateQrcode],
   );
 
-  /**
-   * Menyimpan perubahan final ke dalam history setelah interaksi selesai.
-   * Dipanggil pada onBlur atau onPointerUp.
-   */
   const handleInteractiveChangeCommit = useCallback(() => {
     if (
       isChangingInteractively.current &&
@@ -229,21 +214,23 @@ export function useCanvasHandlers({
       }
       isChangingInteractively.current = false;
       objectStateBeforeInteractiveChange.current = null;
+      forceUpdate(); // <-- PANGGIL FUNGSI UPDATE DI SINI
     }
   }, [
     canvasInstance,
     activeObject,
     Commands.UpdateObjectCommand,
     executeCommand,
+    forceUpdate,
   ]);
 
   const handleQrcodeDataChange = useCallback(
     (data: string) => {
       if (!activeObject || !(activeObject as IQrCodeImage).isQrcode) return;
-      recordStateBeforeInteractiveChange(); // Rekam state awal
+      recordStateBeforeInteractiveChange();
       void updateQrcode(activeObject as IQrCodeImage, { newData: data }).then(
         () => {
-          handleInteractiveChangeCommit(); // Commit perubahan setelah qrcode di-update
+          handleInteractiveChangeCommit();
         },
       );
     },
@@ -254,8 +241,6 @@ export function useCanvasHandlers({
       handleInteractiveChangeCommit,
     ],
   );
-
-  // --- Handlers untuk Aksi Umum ---
 
   const handleDeleteObject = useCallback(() => {
     if (activeObject && canvasInstance) {
@@ -276,17 +261,17 @@ export function useCanvasHandlers({
     if (activeObject && canvasInstance) {
       canvasInstance.bringObjectForward(activeObject);
       toast.info("Objek dimajukan selapis");
-      // Aksi layering sederhana tidak perlu command history kompleks,
-      // cukup simpan state akhir kanvas jika diperlukan.
+      forceUpdate(); // Update UI untuk status tombol layering
     }
-  }, [activeObject, canvasInstance]);
+  }, [activeObject, canvasInstance, forceUpdate]);
 
   const handleSendObjectBackwards = useCallback(() => {
     if (activeObject && canvasInstance) {
       canvasInstance.sendObjectBackwards(activeObject);
       toast.info("Objek dimundurkan selapis");
+      forceUpdate(); // Update UI untuk status tombol layering
     }
-  }, [activeObject, canvasInstance]);
+  }, [activeObject, canvasInstance, forceUpdate]);
 
   const handleDuplicateObject = useCallback(async () => {
     if (!canvasInstance || !activeObject) return;
@@ -303,26 +288,48 @@ export function useCanvasHandlers({
       const command = new Commands.AddObjectCommand(canvasInstance, cloned);
       executeCommand(command);
     } catch (error) {
-      console.error("Gagal menduplikasi objek:", error);
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Terjadi kesalahan tidak dikenal.";
-      toast.error(`Gagal menduplikasi objek: ${message}`);
+      toast.error(
+        `Gagal menduplikasi objek: ${error instanceof Error ? error.message : "Terjadi kesalahan"}`,
+      );
     }
   }, [canvasInstance, activeObject, executeCommand, Commands.AddObjectCommand]);
 
   const handleToggleLock = useCallback(() => {
-    if (!activeObject) return;
+    if (!activeObject || !canvasInstance) return;
+    const props = [
+      "lockMovementX",
+      "lockMovementY",
+      "lockRotation",
+      "lockScalingX",
+      "lockScalingY",
+      "hasControls",
+    ];
+    const initialState = activeObject.toObject(props);
     const isLocked = !activeObject.lockMovementX;
-    handlePropertyChange("lockMovementX", isLocked);
-    handlePropertyChange("lockMovementY", isLocked);
-    handlePropertyChange("lockRotation", isLocked);
-    handlePropertyChange("lockScalingX", isLocked);
-    handlePropertyChange("lockScalingY", isLocked);
-    activeObject.set("hasControls", !isLocked);
-    canvasInstance?.renderAll();
-  }, [activeObject, handlePropertyChange, canvasInstance]);
+    activeObject.set({
+      lockMovementX: isLocked,
+      lockMovementY: isLocked,
+      lockRotation: isLocked,
+      lockScalingX: isLocked,
+      lockScalingY: isLocked,
+      hasControls: !isLocked,
+    });
+    const finalState = activeObject.toObject(props);
+    const command = new Commands.UpdateObjectCommand(
+      canvasInstance,
+      activeObject,
+      initialState,
+      finalState,
+    );
+    executeCommand(command);
+    forceUpdate(); // <-- PANGGIL FUNGSI UPDATE DI SINI
+  }, [
+    activeObject,
+    canvasInstance,
+    Commands.UpdateObjectCommand,
+    executeCommand,
+    forceUpdate,
+  ]);
 
   return {
     handleAddText,
