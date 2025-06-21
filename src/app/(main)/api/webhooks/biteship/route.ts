@@ -4,6 +4,8 @@ import { type NextRequest, NextResponse } from "next/server";
 import { db } from "~/server/db";
 import { type ShippingStatus } from "@prisma/client";
 
+export const runtime = "edge";
+
 // Definisikan tipe untuk payload webhook dari Biteship
 interface BiteshipWebhookPayload {
   event: string;

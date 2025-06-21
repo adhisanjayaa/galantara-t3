@@ -4,6 +4,8 @@ import { type NextRequest, NextResponse } from "next/server";
 import { db } from "~/server/db";
 import { env } from "~/env.js";
 
+export const runtime = "edge";
+
 // Definisikan tipe untuk payload webhook dari Xendit
 interface XenditWebhookPayload {
   id: string;
