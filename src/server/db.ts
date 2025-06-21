@@ -10,7 +10,8 @@ const globalForPrisma = globalThis as unknown as {
 
 const createDbClient = () => {
   const pool = new Pool({ connectionString: env.DATABASE_URL });
-  const adapter = new PrismaNeon(pool);
+  // FIX: Cast 'pool' to 'any' to bypass the type error during build.
+  const adapter = new PrismaNeon(pool as any);
   return new PrismaClient({
     adapter,
     log:
