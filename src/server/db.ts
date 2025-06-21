@@ -1,6 +1,7 @@
+// File: src/server/db.ts
 import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { Pool } from "pg";
+import { PrismaNeon } from "@prisma/adapter-neon";
+import { Pool } from "@neondatabase/serverless";
 import { env } from "~/env";
 
 const globalForPrisma = globalThis as unknown as {
@@ -9,12 +10,7 @@ const globalForPrisma = globalThis as unknown as {
 
 const createDbClient = () => {
   const pool = new Pool({ connectionString: env.DATABASE_URL });
-
-  // --- PERBAIKAN DI SINI ---
-  // Kita gunakan 'as any' untuk melewati error type-checking yang salah dari TypeScript.
-  // Ini aman dilakukan karena kita tahu 'pool' adalah objek yang benar secara fungsional.
-  const adapter = new PrismaPg(pool as any);
-
+  const adapter = new PrismaNeon(pool);
   return new PrismaClient({
     adapter,
     log:
