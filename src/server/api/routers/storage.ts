@@ -4,7 +4,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { supabase } from "~/server/lib/supabase";
-import { randomUUID } from "crypto";
+// import { randomUUID } from "crypto";
 
 export const storageRouter = createTRPCRouter({
   createPresignedUrl: protectedProcedure
@@ -41,7 +41,7 @@ export const storageRouter = createTRPCRouter({
         if (fileExtension === "mpeg") fileExtension = "mp3";
       }
 
-      const fileName = `${userId}/${randomUUID()}.${fileExtension}`;
+      const fileName = `${userId}/${crypto.randomUUID()}.${fileExtension}`;
       const bucketName = "design-assets";
 
       const { data, error } = await supabase.storage

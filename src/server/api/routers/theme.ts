@@ -5,28 +5,20 @@ import {
   adminProcedure,
   protectedProcedure,
 } from "~/server/api/trpc";
-import fs from "fs";
-import path from "path";
 
 export const themeRouter = createTRPCRouter({
   /**
    * Mengambil daftar nama file tema yang tersedia (khusus admin).
    */
   getAvailableThemes: adminProcedure.query(() => {
-    try {
-      const themesDirectory = path.join(
-        process.cwd(),
-        "src/components/invitation-themes",
-      );
-      const filenames = fs.readdirSync(themesDirectory);
-      const themes = filenames
-        .filter((file) => file.endsWith(".tsx"))
-        .map((file) => file.replace(".tsx", ""));
-      return themes;
-    } catch (error) {
-      console.error("Gagal membaca direktori tema:", error);
-      return [];
-    }
+    // Buat daftar nama tema secara manual.
+    // Nama ini harus cocok dengan nama file di `src/components/invitation-themes` (tanpa .tsx)
+    const availableThemes = [
+      "BirthdayPartyTheme",
+      "ElegantTheme",
+      "ModernElegantTheme",
+    ];
+    return availableThemes;
   }),
 
   /**
