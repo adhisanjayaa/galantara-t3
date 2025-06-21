@@ -140,6 +140,21 @@ export default function AdminTemplateEditorPage() {
 
   const { availableFonts, areFontsLoading } = useFontLoader();
 
+  useEffect(() => {
+    const originalBodyStyle = document.body.style.cssText;
+    const originalHtmlStyle = document.documentElement.style.cssText;
+
+    document.documentElement.style.position = "fixed";
+    document.documentElement.style.overflow = "hidden";
+    document.documentElement.style.width = "100%";
+    document.documentElement.style.height = "100%";
+
+    return () => {
+      document.body.style.cssText = originalBodyStyle;
+      document.documentElement.style.cssText = originalHtmlStyle;
+    };
+  }, []);
+
   // Effects
   useEffect(() => {
     if (!canvasInstance) return;
@@ -204,6 +219,7 @@ export default function AdminTemplateEditorPage() {
     let fill =
       typeof activeObject.fill === "string" ? activeObject.fill : "#000000";
     if (isQrcode) fill = (activeObject as IQrCodeImage).qrcodeFill ?? "#000000";
+
     return {
       fill,
       isLocked: !!activeObject.lockMovementX,
@@ -223,7 +239,7 @@ export default function AdminTemplateEditorPage() {
       charSpacing: isText ? ((activeObject as IText).charSpacing ?? 0) : 0,
       lineHeight: isText ? ((activeObject as IText).lineHeight ?? 1.2) : 1.2,
     };
-  }, [activeObject, objectVersion]);
+  }, [activeObject]);
 
   if (isLoading && !isNewTemplate) {
     return (

@@ -144,6 +144,21 @@ export default function DesignEditorPage() {
   });
   const { availableFonts, areFontsLoading } = useFontLoader();
 
+  useEffect(() => {
+    const originalBodyStyle = document.body.style.cssText;
+    const originalHtmlStyle = document.documentElement.style.cssText;
+
+    document.documentElement.style.position = "fixed";
+    document.documentElement.style.overflow = "hidden";
+    document.documentElement.style.width = "100%";
+    document.documentElement.style.height = "100%";
+
+    return () => {
+      document.body.style.cssText = originalBodyStyle;
+      document.documentElement.style.cssText = originalHtmlStyle;
+    };
+  }, []);
+
   // Efek untuk memuat data awal (tidak ada perubahan di sini)
   useEffect(() => {
     if (!canvasInstance || isLoading) return;
@@ -204,6 +219,7 @@ export default function DesignEditorPage() {
     let fill =
       typeof activeObject.fill === "string" ? activeObject.fill : "#000000";
     if (isQrcode) fill = (activeObject as IQrCodeImage).qrcodeFill ?? "#000000";
+
     return {
       fill,
       isLocked: !!activeObject.lockMovementX,
@@ -223,10 +239,8 @@ export default function DesignEditorPage() {
       charSpacing: isText ? ((activeObject as IText).charSpacing ?? 0) : 0,
       lineHeight: isText ? ((activeObject as IText).lineHeight ?? 1.2) : 1.2,
     };
-  }, [activeObject, objectVersion]); // <-- Tambahkan objectVersion
+  }, [activeObject]);
 
-  // Sisa dari komponen (return statement, dll.) tidak perlu diubah.
-  // ...
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center">

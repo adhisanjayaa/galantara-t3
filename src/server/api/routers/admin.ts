@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { createTRPCRouter, adminProcedure } from "~/server/api/trpc";
-import { ProductCategory, type Prisma } from "@prisma/client";
+import { ProductCategory, type Prisma, ShippingStatus } from "@prisma/client"; // <-- Impor ShippingStatus
 import { TRPCError } from "@trpc/server";
 import { supabase } from "~/server/lib/supabase";
-
+import axios from "axios"; // <-- Impor axios
+import { env } from "~/env.js"; // <-- Impor env
 export const adminRouter = createTRPCRouter({
   /**
    * Mengambil semua pesanan untuk ditampilkan di dashboard admin.
@@ -393,5 +394,217 @@ export const adminRouter = createTRPCRouter({
 
       // Hapus record dari database
       return ctx.db.customFont.delete({ where: { id: input.id } });
+    }),
+
+  getOrderDetails: adminProcedure
+    .input(z.object({ orderId: z.string().cuid() }))
+    .query(async ({ ctx, input }) => {
+      const order = await ctx.db.order.findUnique({
+        where: { id: input.orderId },
+        include: {
+          items: {
+            include: {
+              product: true,
+            },
+          },
+        },
+      });
+
+      if (!order) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Pesanan tidak ditemukan.",
+        });
+      }
+
+      // Ambil alamat pengguna secara terpisah menggunakan userId dari pesanan
+      const userAddresses = await ctx.db.address.findMany({
+        where: { userId: order.userId },
+      });
+
+      // Gabungkan data pesanan dengan alamat pengguna agar mudah digunakan di frontend
+      return {
+        ...order,
+        user: {
+          addresses: userAddresses,
+        },
+      };
+    }),
+
+  createShipment: adminProcedure
+    .input(z.object({ orderId: z.string().cuid() }))
+    .mutation(async ({ ctx, input }) => {
+      // 1. Ambil data pesanan
+      const order = await ctx.db.order.findUnique({
+        where: { id: input.orderId },
+        include: {
+          items: { include: { product: true } },
+        },
+      });
+
+      if (
+        !order ||
+        !order.shippingAddress ||
+        !order.shippingProvider ||
+        !order.customerName
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Data pesanan tidak lengkap untuk membuat pengiriman.",
+        });
+      }
+
+      // 2. Filter hanya produk fisik
+      const physicalItems = order.items.filter(
+        (item) => item.product.category === "PHYSICAL",
+      );
+
+      if (physicalItems.length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Pesanan ini tidak memiliki produk fisik.",
+        });
+      }
+
+      // 3. Ambil alamat pengguna secara terpisah untuk mendapatkan data terstruktur
+      const userAddresses = await ctx.db.address.findMany({
+        where: { userId: order.userId },
+      });
+
+      const destinationAddress = userAddresses.find(
+        (addr) =>
+          `${addr.street}, ${addr.city}, ${addr.province} ${addr.postalCode}, ${addr.country}` ===
+          order.shippingAddress,
+      );
+
+      if (!destinationAddress) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Alamat pengiriman di pesanan tidak cocok dengan alamat manapun di profil pengguna.",
+        });
+      }
+
+      // 4. Siapkan payload untuk API Biteship menggunakan data yang andal
+      const biteshipPayload = {
+        origin_contact_name: env.ORIGIN_CONTACT_NAME,
+        origin_contact_phone: env.ORIGIN_CONTACT_PHONE,
+        origin_address: env.ORIGIN_ADDRESS,
+        origin_postal_code: env.ORIGIN_POSTAL_CODE,
+        destination_contact_name: order.customerName,
+        destination_contact_phone: destinationAddress.phoneNumber,
+        destination_address: destinationAddress.street,
+        destination_postal_code: parseInt(destinationAddress.postalCode, 10),
+        courier_company: order.courierCompany,
+        courier_type: order.courierService,
+        delivery_type: "now",
+        order_id: `GALANTARA-${order.id}`,
+        items: physicalItems.map((item) => ({
+          name: item.productName,
+          value: item.price,
+          quantity: item.quantity,
+          weight: (item.product.weightGram ?? 100) / 1000,
+        })),
+      };
+
+      try {
+        // 5. Kirim permintaan ke Biteship
+        const { data: shipmentData } = await axios.post(
+          "https://api.biteship.com/v1/orders",
+          biteshipPayload,
+          {
+            headers: { Authorization: `Bearer ${env.BITESHIP_API_KEY}` },
+          },
+        );
+
+        if (!shipmentData.success) {
+          const errorMsg = Array.isArray(shipmentData.error)
+            ? shipmentData.error.join(", ")
+            : shipmentData.error;
+          throw new Error(errorMsg ?? "Gagal membuat pengiriman di Biteship");
+        }
+
+        const tracking_id = shipmentData.courier.tracking_id;
+        const waybill_id = shipmentData.courier.waybill_id;
+
+        if (!tracking_id || !waybill_id) {
+          throw new Error(
+            "Biteship tidak mengembalikan tracking_id atau waybill_id.",
+          );
+        }
+
+        // 7. Perbarui database dengan data pengiriman baru
+        await ctx.db.order.update({
+          where: { id: order.id },
+          data: {
+            trackingId: tracking_id,
+            shippingStatus: ShippingStatus.SHIPPED,
+          },
+        });
+
+        return {
+          trackingId: tracking_id,
+        };
+      } catch (error) {
+        console.error("Biteship Create Order API Error:", error);
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "Terjadi kesalahan tidak diketahui.";
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Gagal membuat pengiriman melalui Biteship: ${errorMessage}`,
+        });
+      }
+    }),
+
+  getDesignsForOrder: adminProcedure
+    .input(z.object({ orderId: z.string().cuid() }))
+    .query(async ({ ctx, input }) => {
+      const orderItems = await ctx.db.orderItem.findMany({
+        where: {
+          orderId: input.orderId,
+          userDesignId: {
+            not: null, // Hanya ambil item yang memiliki desain kustom
+          },
+        },
+        select: {
+          productName: true,
+          userDesign: {
+            select: {
+              id: true,
+              name: true,
+              designData: true,
+              product: {
+                select: {
+                  designTemplate: {
+                    select: {
+                      artboardWidth: true,
+                      artboardHeight: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!orderItems) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Tidak ada item dengan desain kustom pada pesanan ini.",
+        });
+      }
+
+      // Filter item yang mungkin tidak memiliki userDesign (meskipun query sudah mencoba)
+      // dan format datanya agar lebih mudah digunakan di frontend
+      const designs = orderItems
+        .filter((item) => item.userDesign)
+        .map((item) => {
+          return item.userDesign!;
+        });
+
+      return designs;
     }),
 });
