@@ -1,18 +1,21 @@
-// File: src/app/themes/[themeId]/page.tsx [MODIFIED]
+// File: src/app/(main)/themes/[themeId]/page.tsx
 
 import { notFound } from "next/navigation";
 import Image from "next/image";
-import Link from "next/link"; // [NEW] Impor Link
+import Link from "next/link";
 import { api } from "~/trpc/server";
 import { AddToCartButton } from "~/components/shared/AddToCartButton";
 import { DigitalProductAddToCart } from "./components/DigitalProductAddToCart";
-import { Button } from "~/components/ui/button"; // [NEW] Impor Button
+import { Button } from "~/components/ui/button";
+import { Eye } from "lucide-react";
 
 export default async function ThemeDetailPage({
   params,
 }: {
+  // Perbaikan: Tipe 'params' dibungkus dengan Promise
   params: Promise<{ themeId: string }>;
 }) {
+  // Perbaikan: 'await' digunakan untuk mendapatkan nilai params
   const { themeId } = await params;
   const theme = await api.product.getProductById({ id: themeId });
 
@@ -20,13 +23,23 @@ export default async function ThemeDetailPage({
     notFound();
   }
 
-  // --- [NEW] Fungsi untuk render tombol aksi ---
   const renderActionButton = () => {
+    // Tombol untuk produk digital
     if (theme.category === "DIGITAL") {
-      return <DigitalProductAddToCart product={theme} />;
+      return (
+        <div className="space-y-4">
+          <DigitalProductAddToCart product={theme} />
+          <Button asChild variant="outline" className="w-full">
+            <Link href={`/themes/${theme.id}/preview`}>
+              <Eye className="mr-2 h-4 w-4" />
+              Lihat Preview
+            </Link>
+          </Button>
+        </div>
+      );
     }
 
-    // Jika produk fisik dan bisa didesain
+    // Tombol untuk produk fisik yang bisa didesain
     if (theme.isDesignable) {
       return (
         <Button asChild size="lg" className="w-full">
@@ -37,7 +50,7 @@ export default async function ThemeDetailPage({
       );
     }
 
-    // Jika produk fisik biasa (tidak bisa didesain)
+    // Tombol untuk produk fisik biasa
     return <AddToCartButton productId={theme.id} />;
   };
 
@@ -75,10 +88,7 @@ export default async function ThemeDetailPage({
             )}
           </div>
 
-          <div className="mt-8 border-t pt-8">
-            {/* [MODIFIED] Panggil fungsi render tombol aksi */}
-            {renderActionButton()}
-          </div>
+          <div className="mt-8 border-t pt-8">{renderActionButton()}</div>
         </div>
       </div>
     </main>

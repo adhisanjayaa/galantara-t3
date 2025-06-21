@@ -239,7 +239,7 @@ export default function AdminTemplateEditorPage() {
       charSpacing: isText ? ((activeObject as IText).charSpacing ?? 0) : 0,
       lineHeight: isText ? ((activeObject as IText).lineHeight ?? 1.2) : 1.2,
     };
-  }, [activeObject]);
+  }, [activeObject, objectVersion]);
 
   if (isLoading && !isNewTemplate) {
     return (

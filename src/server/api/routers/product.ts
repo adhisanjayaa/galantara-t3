@@ -56,6 +56,7 @@ export const productRouter = createTRPCRouter({
             },
             include: {
               designTemplate: true,
+              productType: true,
             },
           });
         },

@@ -39,7 +39,7 @@ interface UseCanvasHandlersProps {
   activeObject: FabricObject | null;
   executeCommand: (command: ICommand) => void;
   Commands: ICommands;
-  forceUpdate: () => void; // <-- TAMBAHKAN INI
+  forceUpdate: () => void;
 }
 
 export function useCanvasHandlers({
@@ -47,7 +47,7 @@ export function useCanvasHandlers({
   activeObject,
   executeCommand,
   Commands,
-  forceUpdate, // <-- TAMBAHKAN INI
+  forceUpdate,
 }: UseCanvasHandlersProps) {
   const isChangingInteractively = useRef(false);
   const objectStateBeforeInteractiveChange = useRef<Record<
@@ -217,7 +217,7 @@ export function useCanvasHandlers({
       }
       isChangingInteractively.current = false;
       objectStateBeforeInteractiveChange.current = null;
-      forceUpdate(); // <-- PANGGIL FUNGSI UPDATE DI SINI
+      forceUpdate();
     }
   }, [
     canvasInstance,
@@ -264,7 +264,7 @@ export function useCanvasHandlers({
     if (activeObject && canvasInstance) {
       canvasInstance.bringObjectForward(activeObject);
       toast.info("Objek dimajukan selapis");
-      forceUpdate(); // Update UI untuk status tombol layering
+      forceUpdate();
     }
   }, [activeObject, canvasInstance, forceUpdate]);
 
@@ -272,7 +272,7 @@ export function useCanvasHandlers({
     if (activeObject && canvasInstance) {
       canvasInstance.sendObjectBackwards(activeObject);
       toast.info("Objek dimundurkan selapis");
-      forceUpdate(); // Update UI untuk status tombol layering
+      forceUpdate();
     }
   }, [activeObject, canvasInstance, forceUpdate]);
 
@@ -325,7 +325,7 @@ export function useCanvasHandlers({
       finalState,
     );
     executeCommand(command);
-    forceUpdate(); // <-- PANGGIL FUNGSI UPDATE DI SINI
+    forceUpdate();
   }, [
     activeObject,
     canvasInstance,
