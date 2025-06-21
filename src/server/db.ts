@@ -10,7 +10,8 @@ const globalForPrisma = globalThis as unknown as {
 
 const createDbClient = () => {
   const pool = new Pool({ connectionString: env.DATABASE_URL });
-  // FIX: Cast 'pool' to 'any' to bypass the type error during build.
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const adapter = new PrismaNeon(pool as any);
   return new PrismaClient({
     adapter,
